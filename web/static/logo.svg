@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 64" fill="none">
+  <defs>
+    <linearGradient id="logo-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3B82F6"/>
+      <stop offset="100%" style="stop-color:#10B981"/>
+    </linearGradient>
+    <filter id="logo-glow">
+      <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Icon -->
+  <g transform="translate(4, 8)">
+    <!-- Background circle -->
+    <circle cx="24" cy="24" r="22" fill="#0F172A"/>
+    <circle cx="24" cy="24" r="20" fill="none" stroke="url(#logo-gradient)" stroke-width="2" opacity="0.3"/>
+
+    <!-- Pulse line -->
+    <path d="M8 24 L14 24 L17 16 L20 32 L24 12 L28 30 L31 20 L34 24 L40 24"
+          stroke="url(#logo-gradient)"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          fill="none"
+          filter="url(#logo-glow)"/>
+
+    <!-- Status dot -->
+    <circle cx="40" cy="10" r="5" fill="#10B981"/>
+    <circle cx="40" cy="10" r="2.5" fill="#34D399"/>
+  </g>
+
+  <!-- Text: STATUS -->
+  <text x="64" y="42" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="32" font-weight="700" fill="white" letter-spacing="-0.02em">
+    STATUS
+  </text>
+
+  <!-- Subtitle -->
+  <text x="66" y="56" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="10" font-weight="500" fill="#64748B" letter-spacing="0.1em">
+    ENTERPRISE MONITORING
+  </text>
+</svg>

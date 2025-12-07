@@ -70,6 +70,10 @@ func (s *Server) Start() error {
 	}
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
+	// Favicon
+	mux.HandleFunc("/favicon.ico", s.handleFavicon)
+	mux.HandleFunc("/favicon.svg", s.handleFavicon)
+
 	// === Public API Routes ===
 	mux.HandleFunc("/api/status", s.handleAPIStatus)
 	mux.HandleFunc("/api/status/", s.handleAPIServiceStatus)
@@ -241,6 +245,18 @@ func getClientIP(r *http.Request) string {
 		ip = ip[:colonIdx]
 	}
 	return ip
+}
+
+// handleFavicon serves the favicon
+func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	faviconData, err := staticFiles.ReadFile("static/favicon.svg")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Write(faviconData)
 }
 
 // === Page Handlers ===
