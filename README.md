@@ -1,61 +1,97 @@
-<p align="center">
-  <img src="web/static/logo.svg" alt="Status Logo" width="280">
-</p>
+<div align="center">
 
-<p align="center">
-  <strong>Enterprise-Ready Status Page & Monitoring</strong>
-</p>
+<img src="web/static/logo.svg" alt="Status" width="360">
 
-<p align="center">
-  <a href="#features">Features</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#configuration">Configuration</a> •
-  <a href="#api">API</a> •
-  <a href="#webhooks">Webhooks</a>
-</p>
+<br>
+<br>
+
+[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://go.dev)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)](Containerfile)
+
+**Enterprise-grade status page with multi-protocol health monitoring**
+
+[Features](#features) • [Quick Start](#quick-start) • [Configuration](#configuration) • [API](#api) • [Docker](#docker)
+
+</div>
 
 ---
 
 ## Features
 
-- **Multi-Protocol Monitoring** - HTTP/HTTPS, TCP, ICMP (Ping), DNS, WebSocket, gRPC
-- **Real-Time Updates** - WebSocket-powered live status updates
-- **Beautiful Dark Mode UI** - Glassmorphism design with smooth animations
-- **RSS/Atom/JSON Feeds** - Subscribe to status updates via your preferred format
-- **Incident Management** - Create, update, and resolve incidents via API
-- **Scheduled Maintenance** - Plan and communicate maintenance windows
-- **Webhook Notifications** - Slack, Discord, MS Teams, PagerDuty, Opsgenie
-- **Multiple Auth Methods** - API Key, Bearer Token, Basic Auth, IP Whitelist
-- **90-Day History** - Track uptime and response times over time
-- **Single Binary** - No dependencies, just download and run
+### Multi-Protocol Monitoring
+
+| Protocol | Description |
+|----------|-------------|
+| **HTTP/HTTPS** | Web endpoints with status codes, headers, body validation |
+| **TCP** | Port connectivity checks |
+| **UDP** | UDP service checks |
+| **ICMP** | Ping/latency monitoring |
+| **DNS** | Resolution checks (A, AAAA, MX, TXT, CNAME, NS) |
+| **TLS** | SSL certificate expiry monitoring |
+| **SMTP** | Email server (25/465/587) |
+| **SSH** | SSH server banner check |
+| **POP3/IMAP** | Mail server checks |
+| **FTP** | FTP server availability |
+| **NTP** | Time synchronization |
+| **LDAP** | Directory server |
+| **Redis** | PING/PONG check |
+| **MongoDB** | Connectivity check |
+| **MySQL** | Server handshake |
+| **PostgreSQL** | Connectivity check |
+| **gRPC** | gRPC endpoint |
+| **QUIC** | HTTP/3 QUIC protocol |
+| **WebSocket** | WebSocket connectivity |
+
+### Core Features
+
+- **Real-Time Updates** — WebSocket-powered live status dashboard
+- **Beautiful Dark Mode UI** — Glassmorphism design with smooth animations
+- **RSS/Atom/JSON Feeds** — Subscribe via your preferred format
+- **Incident Management** — Create, update, resolve incidents via API
+- **Scheduled Maintenance** — Plan and communicate maintenance windows
+- **Webhook Notifications** — Slack, Discord, MS Teams, PagerDuty, Opsgenie
+- **Multiple Auth Methods** — API Key, Bearer Token, Basic Auth, IP Whitelist
+- **90-Day History** — Track uptime and response times
+- **BoltDB Storage** — Persistent data with no external dependencies
+- **Single Binary** — No dependencies, just download and run
+
+---
 
 ## Quick Start
 
 ### Build from Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/anubhavg-icpl/status.git
 cd status
-
-# Build
 go build -o status .
-
-# Run (uses config.yaml if present, or demo config)
 ./status
-
-# Run with custom config
-./status -config /path/to/config.yaml
 ```
 
-Then open http://localhost:8080 in your browser.
+Open http://localhost:8080
+
+### Docker / Podman
+
+```bash
+# Build
+podman build -t status -f Containerfile .
+
+# Run
+podman run -d -p 8080:8080 \
+  -v ./config.yaml:/config.yaml:ro \
+  -v ./data:/data \
+  status
+```
+
+---
 
 ## Configuration
 
 Create a `config.yaml` file:
 
 ```yaml
-title: "My Status Page"
+title: "System Status"
 description: "Real-time system status monitoring"
 base_url: "https://status.example.com"
 
@@ -66,22 +102,13 @@ theme:
 
 server:
   port: 8080
-  read_timeout: 15s
-  write_timeout: 15s
 
-# API Authentication (multiple methods supported)
 api:
   enabled: true
-  key: "your-secret-api-key"              # X-API-Key header
-  # bearer_token: "your-bearer-token"     # Authorization: Bearer
-  # basic_auth:
-  #   enabled: true
-  #   username: "admin"
-  #   password: "password"
-  # allowed_ips: ["127.0.0.1"]            # IP whitelist
+  key: "your-secret-api-key"
 
 services:
-  # HTTP/HTTPS Check
+  # HTTP Check
   - name: "API Server"
     type: http
     group: "Core Services"
@@ -90,6 +117,15 @@ services:
     timeout: 10s
     expected_status: 200
 
+  # TLS Certificate Check
+  - name: "SSL Certificate"
+    type: tls
+    group: "Security"
+    host: "example.com"
+    port: 443
+    interval: 1h
+    tls_warn_days: 30
+
   # TCP Port Check
   - name: "Database"
     type: tcp
@@ -97,7 +133,6 @@ services:
     host: "db.example.com"
     port: 5432
     interval: 30s
-    timeout: 5s
 
   # DNS Check
   - name: "DNS"
@@ -105,14 +140,21 @@ services:
     group: "Infrastructure"
     host: "example.com"
     dns_record_type: A
-    dns_resolver: "8.8.8.8:53"
     interval: 60s
 
-  # ICMP Ping Check
+  # ICMP Ping
   - name: "Gateway"
     type: icmp
     group: "Network"
     host: "10.0.0.1"
+    interval: 30s
+
+  # Redis Check
+  - name: "Redis Cache"
+    type: redis
+    group: "Databases"
+    host: "localhost"
+    port: 6379
     interval: 30s
 
 webhooks:
@@ -124,16 +166,7 @@ webhooks:
     enabled: true
 ```
 
-## Check Types
-
-| Type | Description | Required Fields |
-|------|-------------|-----------------|
-| `http` | HTTP/HTTPS endpoint | `url`, `expected_status` |
-| `tcp` | TCP port connectivity | `host`, `port` |
-| `icmp` | Ping/ICMP | `host` |
-| `dns` | DNS resolution | `host`, `dns_record_type` |
-| `websocket` | WebSocket connection | `url` |
-| `grpc` | gRPC health check | `url`, `port` |
+---
 
 ## API
 
@@ -141,41 +174,35 @@ webhooks:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/summary` | Cloudflare-style status summary |
-| GET | `/api/status` | All service statuses |
-| GET | `/api/components` | Component list |
-| GET | `/api/incidents` | Incident list |
-| GET | `/api/maintenance` | Scheduled maintenance |
-| GET | `/api/history` | 90-day history |
-| GET | `/api/metrics` | System metrics |
-| GET | `/feed/rss` | RSS 2.0 feed |
-| GET | `/feed/atom` | Atom 1.0 feed |
-| GET | `/feed/json` | JSON Feed 1.1 |
-| WS | `/ws` | Real-time WebSocket updates |
+| `GET` | `/api/summary` | Cloudflare-style status summary |
+| `GET` | `/api/status` | All service statuses |
+| `GET` | `/api/components` | Component list |
+| `GET` | `/api/incidents` | Incident list |
+| `GET` | `/api/history` | 90-day history |
+| `GET` | `/feed/rss` | RSS 2.0 feed |
+| `GET` | `/feed/atom` | Atom 1.0 feed |
+| `GET` | `/feed/json` | JSON Feed 1.1 |
+| `WS` | `/ws` | Real-time updates |
 
 ### Authenticated Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/incidents` | Create incident |
-| PUT | `/api/incidents/:id` | Update incident |
-| DELETE | `/api/incidents/:id` | Delete incident |
-| POST | `/api/maintenance` | Schedule maintenance |
+| `POST` | `/api/incidents` | Create incident |
+| `PUT` | `/api/incidents/:id` | Update incident |
+| `DELETE` | `/api/incidents/:id` | Delete incident |
 
-### Authentication Methods
+### Authentication
 
 ```bash
-# X-API-Key header
+# API Key
 curl -H "X-API-Key: your-key" https://status.example.com/api/incidents
 
-# Bearer token
-curl -H "Authorization: Bearer your-token" https://status.example.com/api/incidents
+# Bearer Token
+curl -H "Authorization: Bearer token" https://status.example.com/api/incidents
 
 # Basic Auth
 curl -u admin:password https://status.example.com/api/incidents
-
-# Query parameter
-curl "https://status.example.com/api/incidents?api_key=your-key"
 ```
 
 ### Create Incident
@@ -193,52 +220,80 @@ curl -X POST https://status.example.com/api/incidents \
   }'
 ```
 
-## Webhooks
+---
 
-Supported platforms:
+## Docker
+
+### Multi-Stage Build (Scratch)
+
+The included `Containerfile` produces a minimal ~15MB image:
+
+```dockerfile
+# Build stage
+FROM golang:1.23-alpine AS builder
+# ... builds static binary
+
+# Production stage
+FROM scratch
+COPY --from=builder /build/status /status
+ENTRYPOINT ["/status"]
+```
+
+### Build & Run
+
+```bash
+# Build image
+podman build -t status -f Containerfile .
+
+# Run with config
+podman run -d \
+  --name status \
+  -p 8080:8080 \
+  -v ./config.yaml:/config.yaml:ro \
+  -v status-data:/data \
+  status
+```
+
+---
+
+## Webhooks
 
 | Platform | Type | Features |
 |----------|------|----------|
-| **Slack** | `slack` | Rich attachments with colors |
+| **Slack** | `slack` | Rich attachments |
 | **Discord** | `discord` | Embedded messages |
 | **MS Teams** | `teams` | MessageCard format |
-| **PagerDuty** | `pagerduty` | Events API v2, auto-resolve |
-| **Opsgenie** | `opsgenie` | Priority mapping (P1-P4) |
-| **Generic** | `generic` | Custom JSON payload |
+| **PagerDuty** | `pagerduty` | Events API v2 |
+| **Opsgenie** | `opsgenie` | Priority mapping |
+| **Generic** | `generic` | Custom JSON |
 
-### Webhook Events
+### Events
 
-- `incident.created` - New incident reported
-- `incident.updated` - Incident status changed
-- `incident.resolved` - Incident resolved
-- `maintenance.scheduled` - Maintenance scheduled
-- `*` - All events
+- `incident.created` — New incident
+- `incident.updated` — Status changed
+- `incident.resolved` — Incident resolved
+- `maintenance.scheduled` — Maintenance planned
+- `*` — All events
+
+---
 
 ## Project Structure
 
 ```
-.
 ├── main.go              # Entry point
-├── config/
-│   └── config.go        # Configuration & types
-├── monitor/
-│   └── monitor.go       # Multi-protocol health checks
-├── storage/
-│   └── storage.go       # Persistent data storage
-├── feeds/
-│   └── feeds.go         # RSS/Atom/JSON feed generation
-├── notify/
-│   └── notify.go        # Webhook notifications
+├── config/config.go     # Configuration & types
+├── monitor/monitor.go   # Multi-protocol health checks
+├── storage/storage.go   # BoltDB persistence
+├── feeds/feeds.go       # RSS/Atom/JSON feeds
+├── notify/notify.go     # Webhook notifications
 ├── web/
 │   ├── server.go        # HTTP server & API
-│   ├── templates/
-│   │   └── index.html   # Main UI template
-│   └── static/
-│       ├── favicon.svg  # Favicon
-│       └── logo.svg     # Logo
-├── config.yaml          # Configuration file
-└── go.mod
+│   └── templates/       # UI templates
+├── Containerfile        # Multi-stage Docker build
+└── config.yaml          # Configuration
 ```
+
+---
 
 ## License
 
@@ -246,6 +301,8 @@ MIT License
 
 ---
 
-<p align="center">
-  Built with Go
-</p>
+<div align="center">
+
+Built with Go
+
+</div>
