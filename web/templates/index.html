@@ -368,7 +368,7 @@
             font-family: 'JetBrains Mono', monospace;
         }
 
-        /* Uptime Bar */
+        /* Uptime Bar - Gatus style */
         .uptime-bar-container {
             display: flex;
             align-items: center;
@@ -378,25 +378,33 @@
 
         .uptime-bar {
             flex: 1;
-            height: 6px;
-            background: var(--bg-tertiary);
-            border-radius: 3px;
+            height: 24px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
             overflow: hidden;
             display: flex;
             gap: 2px;
+            padding: 4px;
         }
 
         .uptime-segment {
             flex: 1;
+            min-width: 3px;
             height: 100%;
             border-radius: 2px;
-            transition: background-color 0.3s ease;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .uptime-segment:hover {
+            transform: scaleY(1.2);
+            filter: brightness(1.2);
         }
 
         .uptime-segment.operational { background: var(--success); }
         .uptime-segment.degraded { background: var(--warning); }
         .uptime-segment.down { background: var(--error); }
-        .uptime-segment.unknown { background: var(--bg-tertiary); }
+        .uptime-segment.unknown { background: rgba(255, 255, 255, 0.1); }
 
         .uptime-percentage {
             font-size: 0.875rem;
@@ -864,22 +872,25 @@
             `;
         }
 
-        // Render uptime bar segments
+        // Render uptime bar segments (30 bars for visibility)
         function renderUptimeBar(history) {
+            const maxBars = 30;
             if (!history || history.length === 0) {
-                return Array(90).fill('<div class="uptime-segment unknown"></div>').join('');
+                return Array(maxBars).fill('<div class="uptime-segment unknown" title="No data"></div>').join('');
             }
 
-            // Pad history to 90 segments
+            // Pad history to maxBars segments
             const segments = [];
-            const startPadding = Math.max(0, 90 - history.length);
+            const startPadding = Math.max(0, maxBars - history.length);
 
             for (let i = 0; i < startPadding; i++) {
-                segments.push('<div class="uptime-segment unknown"></div>');
+                segments.push('<div class="uptime-segment unknown" title="No data"></div>');
             }
 
-            history.slice(-90).forEach(point => {
-                segments.push(`<div class="uptime-segment ${point.status}"></div>`);
+            history.slice(-maxBars).forEach(point => {
+                const time = new Date(point.timestamp).toLocaleTimeString();
+                const title = `${point.status} - ${point.response_time_ms}ms at ${time}`;
+                segments.push(`<div class="uptime-segment ${point.status}" title="${title}"></div>`);
             });
 
             return segments.join('');
