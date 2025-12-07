@@ -297,12 +297,12 @@ podman run -d \
 
 ## License
 
-MIT License
+MIT License — [Anubhav Gain](https://github.com/anubhavg-icpl)
 
 ---
 
 <div align="center">
 
-Built with Go
+Built with ❤️ and Go by **Anubhav Gain**
 
 </div>
