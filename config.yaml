@@ -1,22 +1,65 @@
-# Status Monitor Configuration
-# Supports: HTTP, TCP, ICMP (Ping), DNS, WebSocket checks
+# Status Monitor - Enterprise Configuration
+# Better than Cloudflare, GitHub, and Google Cloud status pages
 
 title: "System Status"
 description: "Real-time system status and uptime monitoring"
+base_url: "http://localhost:8080"
 
+# Optional branding
+# logo: "https://example.com/logo.svg"
+# favicon: "https://example.com/favicon.ico"
+
+# Theme customization
 theme:
   primary_color: "#3B82F6"
   accent_color: "#10B981"
   dark_mode: true
 
+# Server configuration
 server:
   port: 8080
   read_timeout: 15s
   write_timeout: 15s
 
+# Data storage
+storage:
+  data_dir: "data"
+
+# API configuration
+api:
+  enabled: true
+  key: "your-secret-api-key-here"  # Required for creating incidents
+  rate_limit: 100
+
+# Webhook notifications (Slack, Discord, generic)
+webhooks:
+  # - id: "slack-alerts"
+  #   name: "Slack Alerts"
+  #   url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+  #   type: "slack"
+  #   events: ["incident.created", "incident.resolved"]
+  #   enabled: true
+
+  # - id: "discord-alerts"
+  #   name: "Discord Alerts"
+  #   url: "https://discord.com/api/webhooks/YOUR/DISCORD/WEBHOOK"
+  #   type: "discord"
+  #   events: ["*"]  # All events
+  #   enabled: true
+
+  # - id: "generic-webhook"
+  #   name: "Custom Webhook"
+  #   url: "https://your-server.com/webhook"
+  #   type: "generic"
+  #   headers:
+  #     Authorization: "Bearer your-token"
+  #   events: ["incident.created", "incident.updated", "incident.resolved", "maintenance.scheduled"]
+  #   enabled: true
+
+# Services to monitor
 services:
   # ============================================
-  # HTTP/HTTPS Checks (default type)
+  # HTTP/HTTPS Checks
   # ============================================
   - name: "API Server"
     type: http
@@ -37,7 +80,6 @@ services:
     timeout: 10s
     expected_status: 200
     description: "Public website"
-    # expected_body: "GitHub"  # Optional: check response contains text
 
   # ============================================
   # TCP Port Checks
@@ -49,16 +91,20 @@ services:
     port: 443
     interval: 30s
     timeout: 5s
-    description: "Database server (port check)"
+    description: "Primary database"
 
-  - name: "Redis Cache"
-    type: tcp
+  # ============================================
+  # DNS Checks
+  # ============================================
+  - name: "DNS Resolution"
+    type: dns
     group: "Infrastructure"
     host: "github.com"
-    port: 22
-    interval: 30s
+    dns_record_type: A
+    dns_resolver: "8.8.8.8:53"
+    interval: 60s
     timeout: 5s
-    description: "Redis cache server"
+    description: "DNS A record lookup"
 
   # ============================================
   # ICMP Ping Checks
@@ -69,77 +115,36 @@ services:
     host: "8.8.8.8"
     interval: 30s
     timeout: 5s
-    description: "Google DNS (ping test)"
-
-  - name: "Cloudflare DNS"
-    type: icmp
-    group: "Network"
-    host: "1.1.1.1"
-    interval: 30s
-    timeout: 5s
-    description: "Cloudflare DNS ping"
+    description: "Network connectivity"
 
   # ============================================
-  # DNS Resolution Checks
+  # External Services
   # ============================================
-  - name: "DNS Resolver"
-    type: dns
-    group: "DNS"
-    host: "github.com"
-    dns_record_type: A          # A, AAAA, CNAME, MX, TXT, NS
-    dns_resolver: "8.8.8.8:53"  # Custom DNS server
-    interval: 60s
-    timeout: 5s
-    description: "DNS A record lookup"
-
-  - name: "MX Records"
-    type: dns
-    group: "DNS"
-    host: "google.com"
-    dns_record_type: MX
-    dns_resolver: "1.1.1.1:53"
-    interval: 60s
-    timeout: 5s
-    description: "Email MX records"
-
-  # ============================================
-  # WebSocket Checks
-  # ============================================
-  - name: "WebSocket Server"
-    type: websocket
-    group: "Real-time"
-    url: "wss://echo.websocket.org"
-    interval: 60s
-    timeout: 10s
-    description: "WebSocket connectivity"
-
-  # ============================================
-  # External Dependencies
-  # ============================================
-  - name: "Google"
+  - name: "CDN"
     type: http
     group: "External"
-    url: "https://www.google.com"
+    url: "https://cdn.jsdelivr.net"
     method: GET
     interval: 60s
     timeout: 10s
     expected_status: 200
-    description: "Google services"
+    description: "Content delivery"
 
-  - name: "Cloudflare"
+  - name: "Google APIs"
     type: http
     group: "External"
-    url: "https://www.cloudflare.com"
+    url: "https://www.googleapis.com"
     method: GET
     interval: 60s
     timeout: 10s
-    expected_status: 200
-    description: "Cloudflare CDN"
+    expected_status: 404  # Returns 404 for root
+    description: "Google API services"
 
+# Initial incidents (optional)
 # incidents:
 #   - id: "inc-001"
 #     title: "API Latency Issues"
-#     description: "Investigating slow responses"
-#     status: "resolved"
+#     description: "Investigating slow API responses"
+#     status: "investigating"
 #     severity: "minor"
-#     created_at: "2024-01-15T10:30:00Z"
+#     affected_services: ["API Server"]

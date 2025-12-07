@@ -9,11 +9,16 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/status/config"
+	"github.com/status/feeds"
 	"github.com/status/monitor"
+	"github.com/status/notify"
+	"github.com/status/storage"
 )
 
 //go:embed static/*
@@ -24,22 +29,28 @@ var templateFiles embed.FS
 
 // Server represents the web server
 type Server struct {
-	config   *config.Config
-	monitor  *monitor.Monitor
-	upgrader websocket.Upgrader
-	clients  map[*websocket.Conn]bool
-	clientMu sync.RWMutex
-	server   *http.Server
+	config      *config.Config
+	monitor     *monitor.Monitor
+	storage     *storage.Storage
+	notifier    *notify.Notifier
+	feedGen     *feeds.FeedGenerator
+	upgrader    websocket.Upgrader
+	clients     map[*websocket.Conn]bool
+	clientMu    sync.RWMutex
+	server      *http.Server
 }
 
 // NewServer creates a new web server instance
-func NewServer(cfg *config.Config, mon *monitor.Monitor) *Server {
+func NewServer(cfg *config.Config, mon *monitor.Monitor, store *storage.Storage, notif *notify.Notifier) *Server {
 	return &Server{
-		config:  cfg,
-		monitor: mon,
+		config:   cfg,
+		monitor:  mon,
+		storage:  store,
+		notifier: notif,
+		feedGen:  feeds.NewFeedGenerator(cfg.Title, cfg.BaseURL),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
-				return true // Allow all origins for simplicity
+				return true
 			},
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -59,27 +70,57 @@ func (s *Server) Start() error {
 	}
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
-	// API routes
+	// === Public API Routes ===
 	mux.HandleFunc("/api/status", s.handleAPIStatus)
 	mux.HandleFunc("/api/status/", s.handleAPIServiceStatus)
+	mux.HandleFunc("/api/summary", s.handleAPISummary)
+	mux.HandleFunc("/api/components", s.handleAPIComponents)
+
+	// History API
+	mux.HandleFunc("/api/history", s.handleAPIHistory)
+	mux.HandleFunc("/api/history/", s.handleAPIServiceHistory)
+	mux.HandleFunc("/api/uptime", s.handleAPIUptime)
+
+	// Incidents API (public read, authenticated write)
 	mux.HandleFunc("/api/incidents", s.handleAPIIncidents)
+	mux.HandleFunc("/api/incidents/", s.handleAPIIncident)
+
+	// Maintenance API
+	mux.HandleFunc("/api/maintenance", s.handleAPIMaintenance)
+	mux.HandleFunc("/api/maintenance/", s.handleAPIMaintenanceItem)
+
+	// Metrics API
 	mux.HandleFunc("/api/metrics", s.handleAPIMetrics)
+
+	// === Feed Routes ===
+	mux.HandleFunc("/feed/rss", s.handleRSSFeed)
+	mux.HandleFunc("/feed/atom", s.handleAtomFeed)
+	mux.HandleFunc("/feed/json", s.handleJSONFeed)
+	mux.HandleFunc("/feed", s.handleRSSFeed) // Default to RSS
+
+	// === Subscription Routes ===
+	mux.HandleFunc("/api/subscribe", s.handleSubscribe)
 
 	// WebSocket endpoint
 	mux.HandleFunc("/ws", s.handleWebSocket)
 
-	// Main page
+	// Main pages
 	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/history", s.handleHistoryPage)
+	mux.HandleFunc("/incidents/", s.handleIncidentPage)
 
 	s.server = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.config.Server.Port),
-		Handler:      mux,
+		Handler:      s.withMiddleware(mux),
 		ReadTimeout:  s.config.Server.ReadTimeout,
 		WriteTimeout: s.config.Server.WriteTimeout,
 	}
 
 	// Start broadcasting updates
 	go s.broadcastUpdates()
+
+	// Start daily history recorder
+	go s.recordDailyHistory()
 
 	log.Printf("Starting server on http://localhost:%d", s.config.Server.Port)
 	return s.server.ListenAndServe()
@@ -90,7 +131,47 @@ func (s *Server) Stop(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
 }
 
-// handleIndex serves the main status page
+// Middleware
+func (s *Server) withMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Auth middleware for admin endpoints
+func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.config.API.Key == "" {
+			next(w, r)
+			return
+		}
+
+		apiKey := r.Header.Get("X-API-Key")
+		if apiKey == "" {
+			apiKey = r.URL.Query().Get("api_key")
+		}
+
+		if apiKey != s.config.API.Key {
+			s.jsonError(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		next(w, r)
+	}
+}
+
+// === Page Handlers ===
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -104,21 +185,31 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get active incidents
+	incidents := s.storage.GetIncidents(5, true)
+
+	// Get upcoming maintenance
+	maintenance := s.storage.GetMaintenance(true)
+
 	data := struct {
 		Title       string
 		Description string
 		Logo        string
+		BaseURL     string
 		Theme       config.ThemeConfig
 		Services    []*monitor.ServiceStatus
-		Incidents   []config.Incident
+		Incidents   []storage.Incident
+		Maintenance []storage.Maintenance
 		Overall     monitor.Status
 	}{
 		Title:       s.config.Title,
 		Description: s.config.Description,
 		Logo:        s.config.Logo,
+		BaseURL:     s.config.BaseURL,
 		Theme:       s.config.Theme,
 		Services:    s.monitor.GetAllStatuses(),
-		Incidents:   s.config.Incidents,
+		Incidents:   incidents,
+		Maintenance: maintenance,
 		Overall:     s.monitor.GetOverallStatus(),
 	}
 
@@ -128,14 +219,195 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// APIResponse represents a standard API response
+func (s *Server) handleHistoryPage(w http.ResponseWriter, r *http.Request) {
+	// Serve history page
+	s.handleIndex(w, r)
+}
+
+func (s *Server) handleIncidentPage(w http.ResponseWriter, r *http.Request) {
+	// Serve incident detail page
+	s.handleIndex(w, r)
+}
+
+// === Status API ===
+
 type APIResponse struct {
 	Success bool        `json:"success"`
 	Data    interface{} `json:"data,omitempty"`
 	Error   string      `json:"error,omitempty"`
+	Meta    *APIMeta    `json:"meta,omitempty"`
 }
 
-// handleAPIStatus returns all service statuses
+type APIMeta struct {
+	Page       int    `json:"page,omitempty"`
+	PerPage    int    `json:"per_page,omitempty"`
+	Total      int    `json:"total,omitempty"`
+	GeneratedAt string `json:"generated_at"`
+}
+
+// Summary response like Cloudflare/GitHub
+type SummaryResponse struct {
+	Page       PageInfo       `json:"page"`
+	Status     StatusInfo     `json:"status"`
+	Components []ComponentInfo `json:"components"`
+	Incidents  []IncidentInfo  `json:"incidents"`
+	Maintenance []MaintenanceInfo `json:"scheduled_maintenances"`
+}
+
+type PageInfo struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type StatusInfo struct {
+	Indicator   string `json:"indicator"` // none, minor, major, critical
+	Description string `json:"description"`
+}
+
+type ComponentInfo struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Description string  `json:"description,omitempty"`
+	Status      string  `json:"status"`
+	Group       string  `json:"group,omitempty"`
+	Uptime      float64 `json:"uptime_percent"`
+	ResponseMs  int64   `json:"response_ms"`
+	UpdatedAt   string  `json:"updated_at"`
+}
+
+type IncidentInfo struct {
+	ID               string        `json:"id"`
+	Name             string        `json:"name"`
+	Status           string        `json:"status"`
+	Impact           string        `json:"impact"`
+	CreatedAt        string        `json:"created_at"`
+	UpdatedAt        string        `json:"updated_at"`
+	ResolvedAt       string        `json:"resolved_at,omitempty"`
+	Shortlink        string        `json:"shortlink"`
+	AffectedComponents []string    `json:"affected_components"`
+	Updates          []UpdateInfo  `json:"incident_updates"`
+}
+
+type UpdateInfo struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	Body      string `json:"body"`
+	CreatedAt string `json:"created_at"`
+}
+
+type MaintenanceInfo struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Status         string   `json:"status"`
+	ScheduledFor   string   `json:"scheduled_for"`
+	ScheduledUntil string   `json:"scheduled_until"`
+	AffectedComponents []string `json:"affected_components"`
+}
+
+func (s *Server) handleAPISummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	statuses := s.monitor.GetAllStatuses()
+	incidents := s.storage.GetIncidents(10, false)
+	maintenance := s.storage.GetMaintenance(true)
+	overall := s.monitor.GetOverallStatus()
+
+	// Build components
+	components := make([]ComponentInfo, 0, len(statuses))
+	for _, status := range statuses {
+		components = append(components, ComponentInfo{
+			ID:          strings.ReplaceAll(strings.ToLower(status.Name), " ", "-"),
+			Name:        status.Name,
+			Description: status.Description,
+			Status:      string(status.Status),
+			Group:       status.Group,
+			Uptime:      status.Uptime,
+			ResponseMs:  status.ResponseTimeMs,
+			UpdatedAt:   status.LastCheck.Format(time.RFC3339),
+		})
+	}
+
+	// Build incidents
+	incidentInfos := make([]IncidentInfo, 0, len(incidents))
+	for _, inc := range incidents {
+		updates := make([]UpdateInfo, 0, len(inc.Updates))
+		for _, u := range inc.Updates {
+			updates = append(updates, UpdateInfo{
+				ID:        u.ID,
+				Status:    u.Status,
+				Body:      u.Message,
+				CreatedAt: u.CreatedAt.Format(time.RFC3339),
+			})
+		}
+
+		resolvedAt := ""
+		if inc.ResolvedAt != nil {
+			resolvedAt = inc.ResolvedAt.Format(time.RFC3339)
+		}
+
+		incidentInfos = append(incidentInfos, IncidentInfo{
+			ID:                 inc.ID,
+			Name:               inc.Title,
+			Status:             inc.Status,
+			Impact:             inc.Severity,
+			CreatedAt:          inc.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:          inc.UpdatedAt.Format(time.RFC3339),
+			ResolvedAt:         resolvedAt,
+			Shortlink:          fmt.Sprintf("%s/incidents/%s", s.config.BaseURL, inc.ID),
+			AffectedComponents: inc.AffectedServices,
+			Updates:            updates,
+		})
+	}
+
+	// Build maintenance
+	maintenanceInfos := make([]MaintenanceInfo, 0, len(maintenance))
+	for _, m := range maintenance {
+		maintenanceInfos = append(maintenanceInfos, MaintenanceInfo{
+			ID:                 m.ID,
+			Name:               m.Title,
+			Status:             m.Status,
+			ScheduledFor:       m.ScheduledStart.Format(time.RFC3339),
+			ScheduledUntil:     m.ScheduledEnd.Format(time.RFC3339),
+			AffectedComponents: m.AffectedServices,
+		})
+	}
+
+	// Determine status indicator
+	indicator := "none"
+	description := "All Systems Operational"
+	switch overall {
+	case monitor.StatusDegraded:
+		indicator = "minor"
+		description = "Partial System Outage"
+	case monitor.StatusDown:
+		indicator = "major"
+		description = "Major System Outage"
+	}
+
+	summary := SummaryResponse{
+		Page: PageInfo{
+			ID:        "status",
+			Name:      s.config.Title,
+			URL:       s.config.BaseURL,
+			UpdatedAt: time.Now().Format(time.RFC3339),
+		},
+		Status: StatusInfo{
+			Indicator:   indicator,
+			Description: description,
+		},
+		Components:  components,
+		Incidents:   incidentInfos,
+		Maintenance: maintenanceInfos,
+	}
+
+	s.jsonResponse(w, summary)
+}
+
 func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -145,7 +417,7 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 	statuses := s.monitor.GetAllStatuses()
 	overall := s.monitor.GetOverallStatus()
 
-	// Group services by group name
+	// Group services
 	groups := make(map[string][]*monitor.ServiceStatus)
 	for _, status := range statuses {
 		group := status.Group
@@ -161,17 +433,16 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		"groups":   groups,
 	}
 
-	s.jsonResponse(w, data)
+	s.jsonResponseWithMeta(w, data)
 }
 
-// handleAPIServiceStatus returns status for a specific service
 func (s *Server) handleAPIServiceStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	name := r.URL.Path[len("/api/status/"):]
+	name := strings.TrimPrefix(r.URL.Path, "/api/status/")
 	if name == "" {
 		s.jsonError(w, "Service name required", http.StatusBadRequest)
 		return
@@ -186,17 +457,263 @@ func (s *Server) handleAPIServiceStatus(w http.ResponseWriter, r *http.Request) 
 	s.jsonResponse(w, status)
 }
 
-// handleAPIIncidents returns all incidents
-func (s *Server) handleAPIIncidents(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAPIComponents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	s.jsonResponse(w, s.config.Incidents)
+	statuses := s.monitor.GetAllStatuses()
+	components := make([]ComponentInfo, 0, len(statuses))
+
+	for _, status := range statuses {
+		components = append(components, ComponentInfo{
+			ID:          strings.ReplaceAll(strings.ToLower(status.Name), " ", "-"),
+			Name:        status.Name,
+			Description: status.Description,
+			Status:      string(status.Status),
+			Group:       status.Group,
+			Uptime:      status.Uptime,
+			ResponseMs:  status.ResponseTimeMs,
+			UpdatedAt:   status.LastCheck.Format(time.RFC3339),
+		})
+	}
+
+	s.jsonResponse(w, components)
 }
 
-// MetricsResponse contains system-wide metrics
+// === History API ===
+
+func (s *Server) handleAPIHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	days := 90
+	if d := r.URL.Query().Get("days"); d != "" {
+		fmt.Sscanf(d, "%d", &days)
+	}
+
+	history := s.storage.GetAllHistory(days)
+	s.jsonResponse(w, history)
+}
+
+func (s *Server) handleAPIServiceHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	name := strings.TrimPrefix(r.URL.Path, "/api/history/")
+	if name == "" {
+		s.jsonError(w, "Service name required", http.StatusBadRequest)
+		return
+	}
+
+	days := 90
+	if d := r.URL.Query().Get("days"); d != "" {
+		fmt.Sscanf(d, "%d", &days)
+	}
+
+	history := s.storage.GetHistory(name, days)
+	s.jsonResponse(w, history)
+}
+
+func (s *Server) handleAPIUptime(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	statuses := s.monitor.GetAllStatuses()
+	uptime := make(map[string]float64)
+
+	for _, status := range statuses {
+		uptime[status.Name] = status.Uptime
+	}
+
+	s.jsonResponse(w, uptime)
+}
+
+// === Incidents API ===
+
+func (s *Server) handleAPIIncidents(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		activeOnly := r.URL.Query().Get("active") == "true"
+		limit := 50
+		if l := r.URL.Query().Get("limit"); l != "" {
+			fmt.Sscanf(l, "%d", &limit)
+		}
+
+		incidents := s.storage.GetIncidents(limit, activeOnly)
+		s.jsonResponse(w, incidents)
+
+	case http.MethodPost:
+		s.requireAuth(s.createIncident)(w, r)
+
+	default:
+		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) createIncident(w http.ResponseWriter, r *http.Request) {
+	var incident storage.Incident
+	if err := json.NewDecoder(r.Body).Decode(&incident); err != nil {
+		s.jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	created, err := s.storage.CreateIncident(incident)
+	if err != nil {
+		s.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Notify webhooks
+	if s.notifier != nil {
+		s.notifier.NotifyIncidentCreated(*created, s.config.BaseURL)
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	s.jsonResponse(w, created)
+}
+
+func (s *Server) handleAPIIncident(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/incidents/")
+	if id == "" {
+		s.jsonError(w, "Incident ID required", http.StatusBadRequest)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		incident := s.storage.GetIncident(id)
+		if incident == nil {
+			s.jsonError(w, "Incident not found", http.StatusNotFound)
+			return
+		}
+		s.jsonResponse(w, incident)
+
+	case http.MethodPut, http.MethodPatch:
+		s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			var update struct {
+				Status  string `json:"status"`
+				Message string `json:"message"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+				s.jsonError(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+
+			updated, err := s.storage.UpdateIncident(id, update.Status, update.Message)
+			if err != nil {
+				s.jsonError(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if updated == nil {
+				s.jsonError(w, "Incident not found", http.StatusNotFound)
+				return
+			}
+
+			// Notify webhooks
+			if s.notifier != nil {
+				if update.Status == "resolved" {
+					s.notifier.NotifyIncidentResolved(*updated, s.config.BaseURL)
+				} else {
+					s.notifier.NotifyIncidentUpdated(*updated, s.config.BaseURL)
+				}
+			}
+
+			s.jsonResponse(w, updated)
+		})(w, r)
+
+	case http.MethodDelete:
+		s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			if s.storage.DeleteIncident(id) {
+				w.WriteHeader(http.StatusNoContent)
+			} else {
+				s.jsonError(w, "Incident not found", http.StatusNotFound)
+			}
+		})(w, r)
+
+	default:
+		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// === Maintenance API ===
+
+func (s *Server) handleAPIMaintenance(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		upcoming := r.URL.Query().Get("upcoming") != "false"
+		maintenance := s.storage.GetMaintenance(upcoming)
+		s.jsonResponse(w, maintenance)
+
+	case http.MethodPost:
+		s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			var m storage.Maintenance
+			if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+				s.jsonError(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+
+			created, err := s.storage.CreateMaintenance(m)
+			if err != nil {
+				s.jsonError(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// Notify webhooks
+			if s.notifier != nil {
+				s.notifier.NotifyMaintenanceScheduled(*created, s.config.BaseURL)
+			}
+
+			w.WriteHeader(http.StatusCreated)
+			s.jsonResponse(w, created)
+		})(w, r)
+
+	default:
+		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAPIMaintenanceItem(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/maintenance/")
+	if id == "" {
+		s.jsonError(w, "Maintenance ID required", http.StatusBadRequest)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPut, http.MethodPatch:
+		s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			var update struct {
+				Status string `json:"status"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+				s.jsonError(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+
+			updated, _ := s.storage.UpdateMaintenance(id, update.Status)
+			if updated == nil {
+				s.jsonError(w, "Maintenance not found", http.StatusNotFound)
+				return
+			}
+
+			s.jsonResponse(w, updated)
+		})(w, r)
+
+	default:
+		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// === Metrics API ===
+
 type MetricsResponse struct {
 	TotalServices     int     `json:"total_services"`
 	OperationalCount  int     `json:"operational_count"`
@@ -204,9 +721,10 @@ type MetricsResponse struct {
 	DownCount         int     `json:"down_count"`
 	OverallUptime     float64 `json:"overall_uptime"`
 	AverageResponseMs int64   `json:"average_response_ms"`
+	ActiveIncidents   int     `json:"active_incidents"`
+	TotalIncidents    int     `json:"total_incidents"`
 }
 
-// handleAPIMetrics returns system-wide metrics
 func (s *Server) handleAPIMetrics(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -214,9 +732,13 @@ func (s *Server) handleAPIMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	statuses := s.monitor.GetAllStatuses()
+	incidents := s.storage.GetIncidents(0, false)
+	activeIncidents := s.storage.GetIncidents(0, true)
 
 	metrics := MetricsResponse{
-		TotalServices: len(statuses),
+		TotalServices:   len(statuses),
+		ActiveIncidents: len(activeIncidents),
+		TotalIncidents:  len(incidents),
 	}
 
 	var totalUptime float64
@@ -249,7 +771,71 @@ func (s *Server) handleAPIMetrics(w http.ResponseWriter, r *http.Request) {
 	s.jsonResponse(w, metrics)
 }
 
-// handleWebSocket handles WebSocket connections
+// === Feed Handlers ===
+
+func (s *Server) handleRSSFeed(w http.ResponseWriter, r *http.Request) {
+	incidents := s.storage.GetIncidents(50, false)
+	feed, err := s.feedGen.GenerateRSS(incidents)
+	if err != nil {
+		http.Error(w, "Failed to generate feed", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+	w.Write([]byte(xml.Header))
+	w.Write(feed)
+}
+
+func (s *Server) handleAtomFeed(w http.ResponseWriter, r *http.Request) {
+	incidents := s.storage.GetIncidents(50, false)
+	feed, err := s.feedGen.GenerateAtom(incidents)
+	if err != nil {
+		http.Error(w, "Failed to generate feed", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/atom+xml; charset=utf-8")
+	w.Write(feed)
+}
+
+func (s *Server) handleJSONFeed(w http.ResponseWriter, r *http.Request) {
+	incidents := s.storage.GetIncidents(50, false)
+	feed, err := s.feedGen.GenerateJSON(incidents)
+	if err != nil {
+		http.Error(w, "Failed to generate feed", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/feed+json; charset=utf-8")
+	w.Write(feed)
+}
+
+// === Subscription Handler ===
+
+func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.jsonError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var sub struct {
+		Email    string   `json:"email"`
+		Services []string `json:"services"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&sub); err != nil {
+		s.jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// In production, you'd save this and send verification email
+	s.jsonResponse(w, map[string]string{
+		"message": "Subscription request received. Please check your email for verification.",
+		"email":   sub.Email,
+	})
+}
+
+// === WebSocket Handler ===
+
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -264,10 +850,13 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Send initial status
 	statuses := s.monitor.GetAllStatuses()
 	overall := s.monitor.GetOverallStatus()
+	incidents := s.storage.GetIncidents(5, true)
+
 	initialData := map[string]interface{}{
-		"type":     "initial",
-		"overall":  overall,
-		"services": statuses,
+		"type":      "initial",
+		"overall":   overall,
+		"services":  statuses,
+		"incidents": incidents,
 	}
 	conn.WriteJSON(initialData)
 
@@ -289,7 +878,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-// broadcastUpdates sends status updates to all WebSocket clients
 func (s *Server) broadcastUpdates() {
 	ch := s.monitor.Subscribe()
 	defer s.monitor.Unsubscribe(ch)
@@ -316,23 +904,67 @@ func (s *Server) broadcastUpdates() {
 	}
 }
 
-// jsonResponse sends a JSON response
+// Record daily history
+func (s *Server) recordDailyHistory() {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		statuses := s.monitor.GetAllStatuses()
+		today := time.Now().Format("2006-01-02")
+
+		for _, status := range statuses {
+			dailyStatus := storage.DailyStatus{
+				Date:          today,
+				UptimePercent: status.Uptime,
+				AvgResponseMs: status.ResponseTimeMs,
+				TotalChecks:   len(status.History),
+			}
+
+			// Count successful checks
+			for _, h := range status.History {
+				if h.Status == monitor.StatusOperational || h.Status == monitor.StatusDegraded {
+					dailyStatus.SuccessChecks++
+				}
+			}
+
+			s.storage.RecordDailyStatus(status.Name, dailyStatus)
+		}
+	}
+}
+
+// === JSON Response Helpers ===
+
 func (s *Server) jsonResponse(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
 		Data:    data,
 	})
 }
 
-// jsonError sends a JSON error response
+func (s *Server) jsonResponseWithMeta(w http.ResponseWriter, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data:    data,
+		Meta: &APIMeta{
+			GeneratedAt: time.Now().Format(time.RFC3339),
+		},
+	})
+}
+
 func (s *Server) jsonError(w http.ResponseWriter, message string, code int) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: false,
 		Error:   message,
 	})
+}
+
+var xml = struct {
+	Header string
+}{
+	Header: `<?xml version="1.0" encoding="UTF-8"?>` + "\n",
 }

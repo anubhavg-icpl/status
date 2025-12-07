@@ -9,14 +9,41 @@ import (
 
 // Config holds the main configuration
 type Config struct {
-	Title       string         `yaml:"title"`
-	Description string         `yaml:"description"`
-	Logo        string         `yaml:"logo"`
-	Favicon     string         `yaml:"favicon"`
-	Theme       ThemeConfig    `yaml:"theme"`
-	Server      ServerConfig   `yaml:"server"`
-	Services    []Service      `yaml:"services"`
-	Incidents   []Incident     `yaml:"incidents"`
+	Title       string          `yaml:"title"`
+	Description string          `yaml:"description"`
+	Logo        string          `yaml:"logo"`
+	Favicon     string          `yaml:"favicon"`
+	BaseURL     string          `yaml:"base_url"`
+	Theme       ThemeConfig     `yaml:"theme"`
+	Server      ServerConfig    `yaml:"server"`
+	Services    []Service       `yaml:"services"`
+	Incidents   []Incident      `yaml:"incidents"`
+	Webhooks    []WebhookConfig `yaml:"webhooks"`
+	Storage     StorageConfig   `yaml:"storage"`
+	API         APIConfig       `yaml:"api"`
+}
+
+// StorageConfig holds storage settings
+type StorageConfig struct {
+	DataDir string `yaml:"data_dir"`
+}
+
+// APIConfig holds API settings
+type APIConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Key       string `yaml:"key"` // API key for admin endpoints
+	RateLimit int    `yaml:"rate_limit"`
+}
+
+// WebhookConfig represents a webhook configuration
+type WebhookConfig struct {
+	ID      string            `yaml:"id"`
+	Name    string            `yaml:"name"`
+	URL     string            `yaml:"url"`
+	Type    string            `yaml:"type"` // generic, slack, discord, teams
+	Events  []string          `yaml:"events"`
+	Headers map[string]string `yaml:"headers"`
+	Enabled bool              `yaml:"enabled"`
 }
 
 // ThemeConfig holds theme customization
@@ -94,6 +121,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Title:       "System Status",
 		Description: "Real-time system status and uptime monitoring",
+		BaseURL:     "http://localhost:8080",
 		Theme: ThemeConfig{
 			PrimaryColor: "#3B82F6",
 			AccentColor:  "#10B981",
@@ -104,7 +132,15 @@ func DefaultConfig() *Config {
 			ReadTimeout:  15 * time.Second,
 			WriteTimeout: 15 * time.Second,
 		},
+		Storage: StorageConfig{
+			DataDir: "data",
+		},
+		API: APIConfig{
+			Enabled:   true,
+			RateLimit: 100,
+		},
 		Services: []Service{},
+		Webhooks: []WebhookConfig{},
 	}
 }
 
