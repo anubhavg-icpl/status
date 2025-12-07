@@ -1,30 +1,90 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 100" fill="none">
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="0%">
+    <!-- Gradient for pulse line -->
+    <linearGradient id="pulseGrad" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="50%" stop-color="#06B6D4"/>
       <stop offset="100%" stop-color="#10B981"/>
     </linearGradient>
+
+    <!-- Glow filter -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Animated dash for pulse line -->
+    <style>
+      @keyframes pulse {
+        0%, 100% { stroke-dashoffset: 0; }
+        50% { stroke-dashoffset: 20; }
+      }
+      @keyframes dotPulse {
+        0%, 100% { opacity: 1; r: 8; }
+        50% { opacity: 0.6; r: 10; }
+      }
+      @keyframes glowPulse {
+        0%, 100% { opacity: 0.3; }
+        50% { opacity: 0.6; }
+      }
+      .pulse-line {
+        animation: pulse 2s ease-in-out infinite;
+        stroke-dasharray: 10 5;
+      }
+      .status-dot {
+        animation: dotPulse 2s ease-in-out infinite;
+      }
+      .glow-ring {
+        animation: glowPulse 2s ease-in-out infinite;
+      }
+    </style>
   </defs>
 
-  <!-- Icon container -->
-  <rect x="8" y="12" width="56" height="56" rx="12" fill="#0F172A"/>
+  <!-- Icon background with subtle gradient -->
+  <rect x="10" y="14" width="72" height="72" rx="16" fill="#0F172A"/>
+  <rect x="10" y="14" width="72" height="72" rx="16" fill="url(#pulseGrad)" opacity="0.1"/>
 
-  <!-- Pulse line -->
-  <path d="M16 40 H26 L30 40 L34 24 L38 56 L42 32 L46 48 L50 40 H56"
-        stroke="url(#grad)"
-        stroke-width="3.5"
+  <!-- Grid lines (subtle tech aesthetic) -->
+  <g opacity="0.15" stroke="#3B82F6" stroke-width="0.5">
+    <line x1="20" y1="50" x2="72" y2="50"/>
+    <line x1="46" y1="24" x2="46" y2="76"/>
+  </g>
+
+  <!-- Animated pulse/heartbeat line -->
+  <path class="pulse-line"
+        d="M18 50 H28 L32 50 L38 28 L46 72 L54 38 L60 62 L66 50 H74"
+        stroke="url(#pulseGrad)"
+        stroke-width="4"
         stroke-linecap="round"
         stroke-linejoin="round"
-        fill="none"/>
+        fill="none"
+        filter="url(#glow)"/>
 
-  <!-- Status dot -->
-  <circle cx="58" cy="18" r="6" fill="#10B981"/>
+  <!-- Status indicator with glow -->
+  <circle class="glow-ring" cx="76" cy="20" r="12" fill="#10B981" opacity="0.3"/>
+  <circle class="status-dot" cx="76" cy="20" r="8" fill="#10B981"/>
+  <circle cx="76" cy="20" r="4" fill="#ECFDF5"/>
 
-  <!-- Text: STATUS -->
-  <text x="80" y="52"
+  <!-- Main text: STATUS -->
+  <text x="100" y="62"
         font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-        font-size="36"
+        font-size="48"
         font-weight="800"
-        letter-spacing="-1"
+        letter-spacing="-2"
         fill="white">STATUS</text>
+
+  <!-- Subtle tagline -->
+  <text x="102" y="82"
+        font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        font-size="12"
+        font-weight="500"
+        letter-spacing="3"
+        fill="#64748B"
+        text-transform="uppercase">REAL-TIME MONITORING</text>
+
+  <!-- Accent line under text -->
+  <rect x="100" y="68" width="180" height="2" rx="1" fill="url(#pulseGrad)" opacity="0.4"/>
 </svg>
