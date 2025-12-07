@@ -1,5 +1,7 @@
-# Status Monitor - Enterprise Configuration
-# Better than Cloudflare, GitHub, and Google Cloud status pages
+# =============================================================================
+# Status Page - Enterprise Configuration
+# Multi-Protocol Health Monitoring System
+# =============================================================================
 
 title: "System Status"
 description: "Real-time system status and uptime monitoring"
@@ -28,95 +30,65 @@ storage:
 # API configuration - supports multiple auth methods
 api:
   enabled: true
-  # Option 1: API Key (X-API-Key header or ?api_key= query param)
   key: "your-secret-api-key-here"
-
-  # Option 2: Bearer token (Authorization: Bearer <token>)
-  # bearer_token: "your-bearer-token-here"
-
-  # Option 3: Basic Auth
+  # bearer_token: "your-bearer-token"
   # basic_auth:
   #   enabled: true
   #   username: "admin"
   #   password: "secure-password"
-
-  # Option 4: IP Whitelist (allows requests from these IPs without auth)
-  # allowed_ips:
-  #   - "127.0.0.1"
-  #   - "10.0.0.0/8"
-
+  # allowed_ips: ["127.0.0.1", "10.0.0.0/8"]
   rate_limit: 100
 
-# Webhook notifications - supports Slack, Discord, MS Teams, PagerDuty, Opsgenie, generic
-webhooks:
-  # Slack
+# Webhook notifications
+webhooks: []
   # - id: "slack-alerts"
-  #   name: "Slack Alerts"
-  #   url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+  #   name: "Slack"
+  #   url: "https://hooks.slack.com/services/YOUR/WEBHOOK"
   #   type: "slack"
   #   events: ["incident.created", "incident.resolved"]
   #   enabled: true
 
-  # Discord
-  # - id: "discord-alerts"
-  #   name: "Discord Alerts"
-  #   url: "https://discord.com/api/webhooks/YOUR/DISCORD/WEBHOOK"
-  #   type: "discord"
-  #   events: ["*"]  # All events
-  #   enabled: true
+# =============================================================================
+# SERVICES - Multi-Protocol Health Checks
+# =============================================================================
+# Supported types:
+#   - http/https: Web endpoints with status codes, headers, body validation
+#   - tcp: Port connectivity checks
+#   - udp: UDP service checks
+#   - icmp: Ping/latency checks
+#   - dns: DNS resolution (A, AAAA, MX, TXT, CNAME, NS)
+#   - tls: SSL/TLS certificate expiry monitoring
+#   - smtp: Email server (port 25/465/587)
+#   - ssh: SSH server banner check
+#   - pop3: POP3 mail server
+#   - imap: IMAP mail server
+#   - ftp: FTP server
+#   - ntp: Time server synchronization
+#   - ldap: Directory server
+#   - redis: Redis cache PING/PONG
+#   - mongodb: MongoDB connectivity
+#   - mysql: MySQL server handshake
+#   - postgres: PostgreSQL connectivity
+#   - grpc: gRPC endpoint
+#   - quic: HTTP/3 QUIC protocol
+#   - websocket: WebSocket connectivity
+# =============================================================================
 
-  # Microsoft Teams
-  # - id: "teams-alerts"
-  #   name: "MS Teams Alerts"
-  #   url: "https://outlook.office.com/webhook/YOUR/TEAMS/WEBHOOK"
-  #   type: "teams"  # or "msteams"
-  #   events: ["incident.created", "incident.updated", "incident.resolved"]
-  #   enabled: true
-
-  # PagerDuty (Events API v2)
-  # - id: "pagerduty-alerts"
-  #   name: "PagerDuty"
-  #   url: "https://events.pagerduty.com/v2/enqueue"
-  #   type: "pagerduty"
-  #   headers:
-  #     routing_key: "YOUR_PAGERDUTY_INTEGRATION_KEY"
-  #   events: ["incident.created", "incident.resolved"]
-  #   enabled: true
-
-  # Opsgenie
-  # - id: "opsgenie-alerts"
-  #   name: "Opsgenie"
-  #   url: "https://api.opsgenie.com/v2/alerts"
-  #   type: "opsgenie"
-  #   headers:
-  #     Authorization: "GenieKey YOUR_OPSGENIE_API_KEY"
-  #   events: ["incident.created"]
-  #   enabled: true
-
-  # Generic webhook (any HTTP endpoint)
-  # - id: "generic-webhook"
-  #   name: "Custom Webhook"
-  #   url: "https://your-server.com/webhook"
-  #   type: "generic"
-  #   headers:
-  #     Authorization: "Bearer your-token"
-  #   events: ["incident.created", "incident.updated", "incident.resolved", "maintenance.scheduled"]
-  #   enabled: true
-
-# Services to monitor
 services:
-  # ============================================
-  # HTTP/HTTPS Checks
-  # ============================================
+  # ---------------------------------------------------------------------------
+  # HTTP/HTTPS - Web Services
+  # ---------------------------------------------------------------------------
   - name: "API Server"
     type: http
     group: "Core Services"
-    url: "https://httpbin.org/status/200"
+    url: "https://api.github.com"
     method: GET
     interval: 30s
     timeout: 10s
     expected_status: 200
-    description: "Main API endpoint"
+    headers:
+      Accept: "application/json"
+    description: "REST API endpoint"
 
   - name: "Website"
     type: http
@@ -128,22 +100,43 @@ services:
     expected_status: 200
     description: "Public website"
 
-  # ============================================
-  # TCP Port Checks
-  # ============================================
-  - name: "Database"
-    type: tcp
-    group: "Infrastructure"
+  - name: "CDN"
+    type: http
+    group: "Edge Services"
+    url: "https://cdn.jsdelivr.net/npm/jquery/dist/jquery.min.js"
+    method: HEAD
+    interval: 60s
+    timeout: 10s
+    expected_status: 200
+    description: "Content delivery network"
+
+  # ---------------------------------------------------------------------------
+  # TLS Certificate Monitoring
+  # ---------------------------------------------------------------------------
+  - name: "GitHub SSL"
+    type: tls
+    group: "Security"
     host: "github.com"
     port: 443
-    interval: 30s
-    timeout: 5s
-    description: "Primary database"
+    interval: 1h
+    timeout: 10s
+    tls_warn_days: 30
+    description: "TLS certificate expiry check"
 
-  # ============================================
+  - name: "Google SSL"
+    type: tls
+    group: "Security"
+    host: "google.com"
+    port: 443
+    interval: 1h
+    timeout: 10s
+    tls_warn_days: 14
+    description: "Google certificate monitoring"
+
+  # ---------------------------------------------------------------------------
   # DNS Checks
-  # ============================================
-  - name: "DNS Resolution"
+  # ---------------------------------------------------------------------------
+  - name: "DNS A Record"
     type: dns
     group: "Infrastructure"
     host: "github.com"
@@ -151,47 +144,188 @@ services:
     dns_resolver: "8.8.8.8:53"
     interval: 60s
     timeout: 5s
-    description: "DNS A record lookup"
+    description: "DNS resolution check"
 
-  # ============================================
-  # ICMP Ping Checks
-  # ============================================
+  - name: "DNS MX Records"
+    type: dns
+    group: "Infrastructure"
+    host: "github.com"
+    dns_record_type: MX
+    dns_resolver: "1.1.1.1:53"
+    interval: 5m
+    timeout: 5s
+    description: "Mail server DNS lookup"
+
+  # ---------------------------------------------------------------------------
+  # TCP Port Checks
+  # ---------------------------------------------------------------------------
+  - name: "Database Port"
+    type: tcp
+    group: "Infrastructure"
+    host: "github.com"
+    port: 443
+    interval: 30s
+    timeout: 5s
+    description: "Database connectivity"
+
+  # ---------------------------------------------------------------------------
+  # SSH Server Check
+  # ---------------------------------------------------------------------------
+  - name: "SSH Gateway"
+    type: ssh
+    group: "Infrastructure"
+    host: "github.com"
+    port: 22
+    interval: 60s
+    timeout: 5s
+    description: "SSH server availability"
+
+  # ---------------------------------------------------------------------------
+  # UDP Checks
+  # ---------------------------------------------------------------------------
+  - name: "Google DNS (UDP)"
+    type: udp
+    group: "Infrastructure"
+    host: "8.8.8.8"
+    port: 53
+    interval: 60s
+    timeout: 5s
+    description: "Google Public DNS"
+
+  # ---------------------------------------------------------------------------
+  # ICMP Ping
+  # ---------------------------------------------------------------------------
   - name: "Network Gateway"
     type: icmp
     group: "Network"
     host: "8.8.8.8"
     interval: 30s
     timeout: 5s
-    description: "Network connectivity"
+    description: "Network latency check"
 
-  # ============================================
-  # External Services
-  # ============================================
-  - name: "CDN"
-    type: http
-    group: "External"
-    url: "https://cdn.jsdelivr.net"
-    method: GET
+  # ---------------------------------------------------------------------------
+  # NTP Time Server
+  # ---------------------------------------------------------------------------
+  - name: "NTP Server"
+    type: ntp
+    group: "Infrastructure"
+    host: "time.google.com"
+    port: 123
+    interval: 5m
+    timeout: 5s
+    description: "Time synchronization"
+
+  # ---------------------------------------------------------------------------
+  # HTTP/3 QUIC
+  # ---------------------------------------------------------------------------
+  - name: "QUIC Server"
+    type: quic
+    group: "Edge Services"
+    url: "https://www.google.com"
+    interval: 60s
+    timeout: 5s
+    description: "HTTP/3 QUIC endpoint"
+
+  # ---------------------------------------------------------------------------
+  # WebSocket
+  # ---------------------------------------------------------------------------
+  - name: "WebSocket"
+    type: websocket
+    group: "Real-time"
+    url: "wss://echo.websocket.org"
     interval: 60s
     timeout: 10s
-    expected_status: 200
-    description: "Content delivery"
+    description: "WebSocket connectivity"
 
-  - name: "Google APIs"
-    type: http
-    group: "External"
-    url: "https://www.googleapis.com"
-    method: GET
-    interval: 60s
-    timeout: 10s
-    expected_status: 404  # Returns 404 for root
-    description: "Google API services"
+  # ---------------------------------------------------------------------------
+  # Example: Database Checks (uncomment to enable)
+  # ---------------------------------------------------------------------------
+  # - name: "Redis Cache"
+  #   type: redis
+  #   group: "Databases"
+  #   host: "localhost"
+  #   port: 6379
+  #   interval: 30s
+  #   timeout: 5s
+  #   description: "Redis cache server"
 
-# Initial incidents (optional)
-# incidents:
-#   - id: "inc-001"
-#     title: "API Latency Issues"
-#     description: "Investigating slow API responses"
-#     status: "investigating"
-#     severity: "minor"
-#     affected_services: ["API Server"]
+  # - name: "MySQL Primary"
+  #   type: mysql
+  #   group: "Databases"
+  #   host: "localhost"
+  #   port: 3306
+  #   interval: 30s
+  #   timeout: 5s
+  #   description: "MySQL database"
+
+  # - name: "PostgreSQL"
+  #   type: postgres
+  #   group: "Databases"
+  #   host: "localhost"
+  #   port: 5432
+  #   interval: 30s
+  #   timeout: 5s
+  #   description: "PostgreSQL database"
+
+  # - name: "MongoDB"
+  #   type: mongodb
+  #   group: "Databases"
+  #   host: "localhost"
+  #   port: 27017
+  #   interval: 30s
+  #   timeout: 5s
+  #   description: "MongoDB cluster"
+
+  # ---------------------------------------------------------------------------
+  # Example: Email Server Checks (uncomment to enable)
+  # ---------------------------------------------------------------------------
+  # - name: "SMTP Server"
+  #   type: smtp
+  #   group: "Email"
+  #   host: "smtp.example.com"
+  #   port: 25
+  #   interval: 60s
+  #   timeout: 10s
+  #   description: "Outbound mail server"
+
+  # - name: "IMAP Server"
+  #   type: imap
+  #   group: "Email"
+  #   host: "imap.example.com"
+  #   port: 993
+  #   interval: 60s
+  #   timeout: 10s
+  #   description: "IMAP mail access"
+
+  # ---------------------------------------------------------------------------
+  # Example: FTP/LDAP (uncomment to enable)
+  # ---------------------------------------------------------------------------
+  # - name: "FTP Server"
+  #   type: ftp
+  #   group: "File Services"
+  #   host: "ftp.example.com"
+  #   port: 21
+  #   interval: 60s
+  #   timeout: 10s
+  #   description: "FTP file server"
+
+  # - name: "LDAP Directory"
+  #   type: ldap
+  #   group: "Directory"
+  #   host: "ldap.example.com"
+  #   port: 389
+  #   interval: 60s
+  #   timeout: 5s
+  #   description: "LDAP directory server"
+
+  # ---------------------------------------------------------------------------
+  # Example: gRPC (uncomment to enable)
+  # ---------------------------------------------------------------------------
+  # - name: "gRPC Service"
+  #   type: grpc
+  #   group: "Microservices"
+  #   host: "grpc.example.com"
+  #   port: 443
+  #   interval: 30s
+  #   timeout: 5s
+  #   description: "gRPC endpoint"

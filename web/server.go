@@ -96,6 +96,9 @@ func (s *Server) Start() error {
 	// Metrics API
 	mux.HandleFunc("/api/metrics", s.handleAPIMetrics)
 
+	// API Documentation
+	mux.HandleFunc("/api/", s.handleAPIDocs)
+
 	// === Feed Routes ===
 	mux.HandleFunc("/feed/rss", s.handleRSSFeed)
 	mux.HandleFunc("/feed/atom", s.handleAtomFeed)
@@ -316,6 +319,37 @@ func (s *Server) handleHistoryPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleIncidentPage(w http.ResponseWriter, r *http.Request) {
 	// Serve incident detail page
 	s.handleIndex(w, r)
+}
+
+// handleAPIDocs serves the API documentation page
+func (s *Server) handleAPIDocs(w http.ResponseWriter, r *http.Request) {
+	// Only serve docs at exact /api/ or /api path
+	if r.URL.Path != "/api/" && r.URL.Path != "/api" {
+		http.NotFound(w, r)
+		return
+	}
+
+	tmpl, err := template.ParseFS(templateFiles, "templates/api.html")
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		log.Printf("API docs template error: %v", err)
+		return
+	}
+
+	data := struct {
+		Title   string
+		BaseURL string
+		Theme   config.ThemeConfig
+	}{
+		Title:   s.config.Title,
+		BaseURL: s.config.BaseURL,
+		Theme:   s.config.Theme,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := tmpl.Execute(w, data); err != nil {
+		log.Printf("API docs template execution error: %v", err)
+	}
 }
 
 // === Status API ===
@@ -862,40 +896,69 @@ func (s *Server) handleAPIMetrics(w http.ResponseWriter, r *http.Request) {
 
 // === Feed Handlers ===
 
+func (s *Server) getStatusSummary() *feeds.StatusSummary {
+	statuses := s.monitor.GetAllStatuses()
+	summary := &feeds.StatusSummary{
+		Overall: string(s.monitor.GetOverallStatus()),
+		Total:   len(statuses),
+	}
+
+	for _, status := range statuses {
+		switch status.Status {
+		case monitor.StatusOperational:
+			summary.Operational++
+		case monitor.StatusDegraded:
+			summary.Degraded++
+		case monitor.StatusDown:
+			summary.Down++
+		default:
+			summary.Operational++ // Unknown treated as operational
+		}
+	}
+
+	return summary
+}
+
 func (s *Server) handleRSSFeed(w http.ResponseWriter, r *http.Request) {
 	incidents := s.storage.GetIncidents(50, false)
-	feed, err := s.feedGen.GenerateRSS(incidents)
+	status := s.getStatusSummary()
+	feed, err := s.feedGen.GenerateRSSWithStatus(incidents, status)
 	if err != nil {
 		http.Error(w, "Failed to generate feed", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300") // 5 min cache
 	w.Write([]byte(xml.Header))
 	w.Write(feed)
 }
 
 func (s *Server) handleAtomFeed(w http.ResponseWriter, r *http.Request) {
 	incidents := s.storage.GetIncidents(50, false)
-	feed, err := s.feedGen.GenerateAtom(incidents)
+	status := s.getStatusSummary()
+	feed, err := s.feedGen.GenerateAtomWithStatus(incidents, status)
 	if err != nil {
 		http.Error(w, "Failed to generate feed", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/atom+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300")
 	w.Write(feed)
 }
 
 func (s *Server) handleJSONFeed(w http.ResponseWriter, r *http.Request) {
 	incidents := s.storage.GetIncidents(50, false)
-	feed, err := s.feedGen.GenerateJSON(incidents)
+	status := s.getStatusSummary()
+	feed, err := s.feedGen.GenerateJSONWithStatus(incidents, status)
 	if err != nil {
 		http.Error(w, "Failed to generate feed", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/feed+json; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300")
 	w.Write(feed)
 }
 

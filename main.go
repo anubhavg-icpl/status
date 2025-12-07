@@ -83,6 +83,25 @@ func main() {
 				ExpectedStatus: 200,
 				Description:    "Content delivery network",
 			},
+			{
+				Name:        "UDP DNS",
+				Group:       "Infrastructure",
+				Type:        config.CheckUDP,
+				Host:        "8.8.8.8",
+				Port:        53,
+				Interval:    60 * time.Second,
+				Timeout:     5 * time.Second,
+				Description: "Google DNS (UDP)",
+			},
+			{
+				Name:        "QUIC Server",
+				Group:       "Edge Services",
+				Type:        config.CheckQUIC,
+				URL:         "https://www.google.com",
+				Interval:    60 * time.Second,
+				Timeout:     5 * time.Second,
+				Description: "HTTP/3 QUIC endpoint",
+			},
 		}
 	}
 
@@ -112,8 +131,8 @@ func main() {
 	notifier := notify.NewNotifier(webhookConfigs)
 	log.Printf("Webhooks configured: %d", len(webhookConfigs))
 
-	// Create monitor
-	mon := monitor.NewMonitor(cfg.Services)
+	// Create monitor with storage for persistence
+	mon := monitor.NewMonitor(cfg.Services, store)
 
 	// Start monitoring
 	log.Printf("Starting health monitors for %d services...", len(cfg.Services))
@@ -169,6 +188,11 @@ func main() {
 	mon.Stop()
 	if err := server.Stop(ctx); err != nil {
 		log.Printf("Server shutdown error: %v", err)
+	}
+
+	// Close storage
+	if err := store.Close(); err != nil {
+		log.Printf("Storage close error: %v", err)
 	}
 
 	log.Println("Server stopped")

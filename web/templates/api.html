@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Documentation - {{.Title}}</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a24;
+            --text: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border: rgba(255,255,255,0.08);
+            --primary: #3B82F6;
+            --success: #10B981;
+            --warning: #F59E0B;
+            --error: #EF4444;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Header */
+        header {
+            border-bottom: 1px solid var(--border);
+            padding: 20px 0;
+            position: sticky;
+            top: 0;
+            background: rgba(10,10,15,0.9);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: var(--text);
+        }
+
+        .logo svg { width: 32px; height: 32px; }
+        .logo span { font-weight: 700; font-size: 1.25rem; }
+
+        .nav-links {
+            display: flex;
+            gap: 24px;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover { color: var(--text); }
+        .nav-links a.active { color: var(--primary); }
+
+        /* Layout */
+        .layout {
+            display: grid;
+            grid-template-columns: 240px 1fr;
+            gap: 48px;
+            padding: 48px 0;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: sticky;
+            top: 100px;
+            height: fit-content;
+        }
+
+        .sidebar-section {
+            margin-bottom: 24px;
+        }
+
+        .sidebar-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .sidebar-links {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .sidebar-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.875rem;
+            padding: 6px 12px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .sidebar-links a:hover {
+            color: var(--text);
+            background: var(--bg-secondary);
+        }
+
+        /* Main Content */
+        .main-content h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, var(--primary), var(--success));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .intro {
+            font-size: 1.125rem;
+            color: var(--text-muted);
+            margin-bottom: 48px;
+            max-width: 600px;
+        }
+
+        .base-url {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .base-url code {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--success);
+        }
+
+        .copy-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        /* Endpoint Section */
+        .endpoint-section {
+            margin-bottom: 48px;
+        }
+
+        .endpoint-section h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .endpoint {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .endpoint-header {
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .endpoint-header:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .method {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 4px;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .method.get { background: rgba(16,185,129,0.2); color: var(--success); }
+        .method.post { background: rgba(59,130,246,0.2); color: var(--primary); }
+        .method.put { background: rgba(245,158,11,0.2); color: var(--warning); }
+        .method.delete { background: rgba(239,68,68,0.2); color: var(--error); }
+        .method.ws { background: rgba(168,85,247,0.2); color: #A855F7; }
+
+        .endpoint-path {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.875rem;
+            color: var(--text);
+        }
+
+        .endpoint-desc {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            margin-left: auto;
+        }
+
+        .endpoint-body {
+            display: none;
+            padding: 20px;
+            border-top: 1px solid var(--border);
+            background: var(--bg);
+        }
+
+        .endpoint.open .endpoint-body {
+            display: block;
+        }
+
+        .endpoint-body h4 {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .code-block {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            overflow-x: auto;
+        }
+
+        .code-block code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8125rem;
+            color: var(--text);
+            white-space: pre;
+        }
+
+        .code-block .key { color: #7DD3FC; }
+        .code-block .string { color: #86EFAC; }
+        .code-block .number { color: #FCD34D; }
+        .code-block .bool { color: #F472B6; }
+
+        .auth-badge {
+            background: rgba(245,158,11,0.2);
+            color: var(--warning);
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: 8px;
+        }
+
+        /* Auth Section */
+        .auth-methods {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .auth-method {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .auth-method h4 {
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .auth-method code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--success);
+            background: var(--bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+            .sidebar {
+                display: none;
+            }
+            .auth-methods {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <a href="/" class="logo">
+                    <svg viewBox="0 0 32 32" fill="none">
+                        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#3B82F6"/><stop offset="100%" stop-color="#10B981"/></linearGradient></defs>
+                        <rect width="32" height="32" rx="8" fill="#0F172A"/>
+                        <path d="M4 16 H10 L12 16 L14 8 L16 24 L18 12 L20 20 L22 16 H28" stroke="url(#g)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                        <circle cx="27" cy="5" r="4" fill="#10B981"/>
+                    </svg>
+                    <span>Status API</span>
+                </a>
+                <nav class="nav-links">
+                    <a href="/">Status Page</a>
+                    <a href="/api/" class="active">API Docs</a>
+                    <a href="/feed/rss">RSS Feed</a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="layout">
+            <aside class="sidebar">
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Getting Started</div>
+                    <div class="sidebar-links">
+                        <a href="#overview">Overview</a>
+                        <a href="#authentication">Authentication</a>
+                        <a href="#base-url">Base URL</a>
+                    </div>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Public Endpoints</div>
+                    <div class="sidebar-links">
+                        <a href="#summary">Summary</a>
+                        <a href="#status">Status</a>
+                        <a href="#components">Components</a>
+                        <a href="#incidents">Incidents</a>
+                        <a href="#history">History</a>
+                        <a href="#metrics">Metrics</a>
+                    </div>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Feeds</div>
+                    <div class="sidebar-links">
+                        <a href="#feeds">RSS / Atom / JSON</a>
+                    </div>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Real-time</div>
+                    <div class="sidebar-links">
+                        <a href="#websocket">WebSocket</a>
+                    </div>
+                </div>
+            </aside>
+
+            <main class="main-content">
+                <h1 id="overview">API Documentation</h1>
+                <p class="intro">
+                    Complete REST API for accessing status data, incidents, and real-time updates.
+                    All responses are JSON formatted.
+                </p>
+
+                <div class="base-url" id="base-url">
+                    <div>
+                        <span style="color: var(--text-muted)">Base URL</span><br>
+                        <code>{{.BaseURL}}</code>
+                    </div>
+                    <button class="copy-btn" onclick="copyToClipboard('{{.BaseURL}}')">Copy</button>
+                </div>
+
+                <!-- Authentication -->
+                <section class="endpoint-section" id="authentication">
+                    <h2>Authentication</h2>
+                    <p style="color: var(--text-muted); margin-bottom: 16px;">
+                        Public endpoints require no authentication. Admin endpoints (POST, PUT, DELETE) support multiple auth methods:
+                    </p>
+                    <div class="auth-methods">
+                        <div class="auth-method">
+                            <h4>API Key Header</h4>
+                            <code>X-API-Key: your-key</code>
+                        </div>
+                        <div class="auth-method">
+                            <h4>Bearer Token</h4>
+                            <code>Authorization: Bearer token</code>
+                        </div>
+                        <div class="auth-method">
+                            <h4>Basic Auth</h4>
+                            <code>Authorization: Basic base64</code>
+                        </div>
+                        <div class="auth-method">
+                            <h4>Query Parameter</h4>
+                            <code>?api_key=your-key</code>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Summary -->
+                <section class="endpoint-section" id="summary">
+                    <h2>Summary</h2>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/api/summary</span>
+                            <span class="endpoint-desc">Cloudflare-style status summary</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Response</h4>
+                            <div class="code-block"><code>{
+  <span class="key">"page"</span>: {
+    <span class="key">"id"</span>: <span class="string">"status"</span>,
+    <span class="key">"name"</span>: <span class="string">"System Status"</span>,
+    <span class="key">"url"</span>: <span class="string">"{{.BaseURL}}"</span>
+  },
+  <span class="key">"status"</span>: {
+    <span class="key">"indicator"</span>: <span class="string">"none"</span>,
+    <span class="key">"description"</span>: <span class="string">"All Systems Operational"</span>
+  },
+  <span class="key">"components"</span>: [...],
+  <span class="key">"incidents"</span>: [...]
+}</code></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Status -->
+                <section class="endpoint-section" id="status">
+                    <h2>Status</h2>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/api/status</span>
+                            <span class="endpoint-desc">All service statuses with history</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Response</h4>
+                            <div class="code-block"><code>{
+  <span class="key">"success"</span>: <span class="bool">true</span>,
+  <span class="key">"data"</span>: {
+    <span class="key">"overall"</span>: <span class="string">"operational"</span>,
+    <span class="key">"services"</span>: [
+      {
+        <span class="key">"name"</span>: <span class="string">"API Server"</span>,
+        <span class="key">"status"</span>: <span class="string">"operational"</span>,
+        <span class="key">"uptime"</span>: <span class="number">99.95</span>,
+        <span class="key">"response_time_ms"</span>: <span class="number">145</span>
+      }
+    ]
+  }
+}</code></div>
+                        </div>
+                    </div>
+
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/api/status/{name}</span>
+                            <span class="endpoint-desc">Single service status</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Example</h4>
+                            <div class="code-block"><code>GET /api/status/API%20Server</code></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Components -->
+                <section class="endpoint-section" id="components">
+                    <h2>Components</h2>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/api/components</span>
+                            <span class="endpoint-desc">List all monitored components</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Response</h4>
+                            <div class="code-block"><code>[
+  {
+    <span class="key">"id"</span>: <span class="string">"api-server"</span>,
+    <span class="key">"name"</span>: <span class="string">"API Server"</span>,
+    <span class="key">"status"</span>: <span class="string">"operational"</span>,
+    <span class="key">"group"</span>: <span class="string">"Core Services"</span>,
+    <span class="key">"uptime_percent"</span>: <span class="number">99.95</span>
+  }
+]</code></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Incidents -->
+                <section class="endpoint-section" id="incidents">
+                    <h2>Incidents</h2>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/api/incidents</span>
+                            <span class="endpoint-desc">List all incidents</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Query Parameters</h4>
+                            <div class="code-block"><code>active=true    # Only active incidents
+limit=50       # Max results</code></div>
+                        </div>
+                    </div>
+
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method post">POST</span>
+                            <span class="endpoint-path">/api/incidents</span>
+                            <span class="endpoint-desc">Create new incident</span>
+                            <span class="auth-badge">Auth Required</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Request Body</h4>
+                            <div class="code-block"><code>{
+  <span class="key">"title"</span>: <span class="string">"Database Connection Issues"</span>,
+  <span class="key">"message"</span>: <span class="string">"Investigating elevated error rates"</span>,
+  <span class="key">"status"</span>: <span class="string">"investigating"</span>,
+  <span class="key">"severity"</span>: <span class="string">"major"</span>,
+  <span class="key">"affected_services"</span>: [<span class="string">"Database"</span>, <span class="string">"API"</span>]
+}</code></div>
+                            <h4>cURL Example</h4>
+                            <div class="code-block"><code>curl -X POST {{.BaseURL}}/api/incidents \
+  -H "X-API-Key: your-key" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Issue", "status": "investigating", "severity": "minor"}'</code></div>
+                        </div>
+                    </div>
+
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method put">PUT</span>
+                            <span class="endpoint-path">/api/incidents/{id}</span>
+                            <span class="endpoint-desc">Update incident status</span>
+                            <span class="auth-badge">Auth Required</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Request Body</h4>
+                            <div class="code-block"><code>{
+  <span class="key">"status"</span>: <span class="string">"resolved"</span>,
+  <span class="key">"message"</span>: <span class="string">"Issue has been resolved"</span>
+}</code></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- History -->
+                <section class="endpoint-section" id="history">
+                    <h2>History</h2>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/api/history</span>
+                            <span class="endpoint-desc">90-day uptime history</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Query Parameters</h4>
+                            <div class="code-block"><code>days=90    # Number of days (default: 90)</code></div>
+                        </div>
+                    </div>
+
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/api/uptime</span>
+                            <span class="endpoint-desc">Current uptime percentages</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Response</h4>
+                            <div class="code-block"><code>{
+  <span class="key">"API Server"</span>: <span class="number">99.95</span>,
+  <span class="key">"Database"</span>: <span class="number">100.0</span>
+}</code></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Metrics -->
+                <section class="endpoint-section" id="metrics">
+                    <h2>Metrics</h2>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/api/metrics</span>
+                            <span class="endpoint-desc">System-wide metrics</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Response</h4>
+                            <div class="code-block"><code>{
+  <span class="key">"total_services"</span>: <span class="number">7</span>,
+  <span class="key">"operational_count"</span>: <span class="number">7</span>,
+  <span class="key">"degraded_count"</span>: <span class="number">0</span>,
+  <span class="key">"down_count"</span>: <span class="number">0</span>,
+  <span class="key">"overall_uptime"</span>: <span class="number">99.95</span>,
+  <span class="key">"average_response_ms"</span>: <span class="number">187</span>,
+  <span class="key">"active_incidents"</span>: <span class="number">0</span>
+}</code></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Feeds -->
+                <section class="endpoint-section" id="feeds">
+                    <h2>Feeds</h2>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/feed/rss</span>
+                            <span class="endpoint-desc">RSS 2.0 feed</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Content-Type</h4>
+                            <div class="code-block"><code>application/rss+xml</code></div>
+                        </div>
+                    </div>
+
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/feed/atom</span>
+                            <span class="endpoint-desc">Atom 1.0 feed</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Content-Type</h4>
+                            <div class="code-block"><code>application/atom+xml</code></div>
+                        </div>
+                    </div>
+
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/feed/json</span>
+                            <span class="endpoint-desc">JSON Feed 1.1</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Content-Type</h4>
+                            <div class="code-block"><code>application/feed+json</code></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- WebSocket -->
+                <section class="endpoint-section" id="websocket">
+                    <h2>WebSocket</h2>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method ws">WS</span>
+                            <span class="endpoint-path">/ws</span>
+                            <span class="endpoint-desc">Real-time status updates</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Connection</h4>
+                            <div class="code-block"><code>const ws = new WebSocket('ws://{{.Host}}/ws');
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log(data.type, data.service);
+};</code></div>
+                            <h4>Message Types</h4>
+                            <div class="code-block"><code><span class="key">"initial"</span>  - Full status on connect
+<span class="key">"update"</span>   - Service status changed</code></div>
+                        </div>
+                    </div>
+                </section>
+
+            </main>
+        </div>
+    </div>
+
+    <script>
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text);
+            const btn = document.querySelector('.copy-btn');
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = 'Copy', 2000);
+        }
+    </script>
+</body>
+</html>

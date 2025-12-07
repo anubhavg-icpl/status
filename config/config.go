@@ -76,10 +76,24 @@ type CheckType string
 const (
 	CheckHTTP      CheckType = "http"
 	CheckTCP       CheckType = "tcp"
+	CheckUDP       CheckType = "udp"
 	CheckICMP      CheckType = "icmp"
 	CheckDNS       CheckType = "dns"
 	CheckWebSocket CheckType = "websocket"
 	CheckGRPC      CheckType = "grpc"
+	CheckQUIC      CheckType = "quic"
+	CheckSMTP      CheckType = "smtp"
+	CheckSSH       CheckType = "ssh"
+	CheckTLS       CheckType = "tls"  // TLS certificate validation
+	CheckPOP3      CheckType = "pop3"
+	CheckIMAP      CheckType = "imap"
+	CheckFTP       CheckType = "ftp"
+	CheckNTP       CheckType = "ntp"
+	CheckLDAP      CheckType = "ldap"
+	CheckRedis     CheckType = "redis"
+	CheckMongoDB   CheckType = "mongodb"
+	CheckMySQL     CheckType = "mysql"
+	CheckPostgres  CheckType = "postgres"
 )
 
 // Service represents a monitored service
@@ -103,6 +117,18 @@ type Service struct {
 	SkipTLSVerify  bool              `yaml:"skip_tls_verify"`
 	// Body validation
 	ExpectedBody   string            `yaml:"expected_body"`   // String to find in response
+	// UDP specific
+	UDPPayload     string            `yaml:"udp_payload"`     // Payload to send for UDP check
+	UDPExpected    string            `yaml:"udp_expected"`    // Expected response pattern
+	// QUIC specific (HTTP/3)
+	QUICALPN       []string          `yaml:"quic_alpn"`       // ALPN protocols (h3, h3-29, etc.)
+	// TLS Certificate check
+	TLSWarnDays    int               `yaml:"tls_warn_days"`   // Days before expiry to warn (default 30)
+	// Database connection strings
+	ConnectionString string          `yaml:"connection_string"` // For database checks
+	// SMTP/Email specific
+	SMTPStartTLS   bool              `yaml:"smtp_starttls"`   // Use STARTTLS
+	SMTPAuth       bool              `yaml:"smtp_auth"`       // Require auth response
 }
 
 // Incident represents a past or ongoing incident

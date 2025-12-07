@@ -1,20 +1,30 @@
 package storage
 
 import (
+	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
 
-// Storage handles persistent data storage
+// Bucket names
+var (
+	bucketIncidents    = []byte("incidents")
+	bucketMaintenance  = []byte("maintenance")
+	bucketHistory      = []byte("history")
+	bucketCheckHistory = []byte("check_history")
+)
+
+// Storage handles persistent data storage using BoltDB
 type Storage struct {
-	dataDir   string
-	mu        sync.RWMutex
-	incidents []Incident
-	history   map[string][]DailyStatus
-	maintenance []Maintenance
+	dataDir string
+	db      *bolt.DB
+	mu      sync.RWMutex
 }
 
 // Incident represents a status incident
@@ -54,15 +64,32 @@ type Maintenance struct {
 
 // DailyStatus represents daily uptime status
 type DailyStatus struct {
-	Date           string  `json:"date"`
-	UptimePercent  float64 `json:"uptime_percent"`
-	AvgResponseMs  int64   `json:"avg_response_ms"`
-	TotalChecks    int     `json:"total_checks"`
-	SuccessChecks  int     `json:"success_checks"`
-	Incidents      int     `json:"incidents"`
+	Date          string  `json:"date"`
+	UptimePercent float64 `json:"uptime_percent"`
+	AvgResponseMs int64   `json:"avg_response_ms"`
+	TotalChecks   int     `json:"total_checks"`
+	SuccessChecks int     `json:"success_checks"`
+	Incidents     int     `json:"incidents"`
 }
 
-// NewStorage creates a new storage instance
+// CheckPoint represents a single health check result (for persistence)
+type CheckPoint struct {
+	Timestamp      time.Time `json:"timestamp"`
+	ResponseTimeMs int64     `json:"response_time_ms"`
+	Status         string    `json:"status"`
+	StatusCode     int       `json:"status_code"`
+}
+
+// ServiceCheckHistory holds persisted check history for a service
+type ServiceCheckHistory struct {
+	ServiceName  string       `json:"service_name"`
+	History      []CheckPoint `json:"history"`
+	Uptime       float64      `json:"uptime"`
+	LastCheck    time.Time    `json:"last_check"`
+	ErrorMessage string       `json:"error_message,omitempty"`
+}
+
+// NewStorage creates a new storage instance with BoltDB
 func NewStorage(dataDir string) (*Storage, error) {
 	if dataDir == "" {
 		dataDir = "data"
@@ -73,63 +100,41 @@ func NewStorage(dataDir string) (*Storage, error) {
 		return nil, err
 	}
 
-	s := &Storage{
-		dataDir:   dataDir,
-		incidents: []Incident{},
-		history:   make(map[string][]DailyStatus),
-		maintenance: []Maintenance{},
+	// Open BoltDB database
+	dbPath := filepath.Join(dataDir, "status.db")
+	db, err := bolt.Open(dbPath, 0600, &bolt.Options{Timeout: 1 * time.Second})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Load existing data
-	s.load()
+	// Create buckets
+	err = db.Update(func(tx *bolt.Tx) error {
+		buckets := [][]byte{bucketIncidents, bucketMaintenance, bucketHistory, bucketCheckHistory}
+		for _, bucket := range buckets {
+			if _, err := tx.CreateBucketIfNotExists(bucket); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to create buckets: %w", err)
+	}
+
+	s := &Storage{
+		dataDir: dataDir,
+		db:      db,
+	}
 
 	return s, nil
 }
 
-// load reads data from disk
-func (s *Storage) load() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Load incidents
-	incidentsFile := filepath.Join(s.dataDir, "incidents.json")
-	if data, err := os.ReadFile(incidentsFile); err == nil {
-		json.Unmarshal(data, &s.incidents)
+// Close closes the database
+func (s *Storage) Close() error {
+	if s.db != nil {
+		return s.db.Close()
 	}
-
-	// Load history
-	historyFile := filepath.Join(s.dataDir, "history.json")
-	if data, err := os.ReadFile(historyFile); err == nil {
-		json.Unmarshal(data, &s.history)
-	}
-
-	// Load maintenance
-	maintenanceFile := filepath.Join(s.dataDir, "maintenance.json")
-	if data, err := os.ReadFile(maintenanceFile); err == nil {
-		json.Unmarshal(data, &s.maintenance)
-	}
-}
-
-// save writes data to disk
-func (s *Storage) save() error {
-	// Save incidents
-	incidentsFile := filepath.Join(s.dataDir, "incidents.json")
-	if data, err := json.MarshalIndent(s.incidents, "", "  "); err == nil {
-		os.WriteFile(incidentsFile, data, 0644)
-	}
-
-	// Save history
-	historyFile := filepath.Join(s.dataDir, "history.json")
-	if data, err := json.MarshalIndent(s.history, "", "  "); err == nil {
-		os.WriteFile(historyFile, data, 0644)
-	}
-
-	// Save maintenance
-	maintenanceFile := filepath.Join(s.dataDir, "maintenance.json")
-	if data, err := json.MarshalIndent(s.maintenance, "", "  "); err == nil {
-		os.WriteFile(maintenanceFile, data, 0644)
-	}
-
 	return nil
 }
 
@@ -156,9 +161,18 @@ func (s *Storage) CreateIncident(incident Incident) (*Incident, error) {
 		})
 	}
 
-	s.incidents = append([]Incident{incident}, s.incidents...)
-	s.save()
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketIncidents)
+		data, err := json.Marshal(incident)
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte(incident.ID), data)
+	})
 
+	if err != nil {
+		return nil, err
+	}
 	return &incident, nil
 }
 
@@ -167,31 +181,50 @@ func (s *Storage) UpdateIncident(id string, status string, message string) (*Inc
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for i := range s.incidents {
-		if s.incidents[i].ID == id {
-			s.incidents[i].Status = status
-			s.incidents[i].UpdatedAt = time.Now()
+	var incident *Incident
 
-			if status == "resolved" {
-				now := time.Now()
-				s.incidents[i].ResolvedAt = &now
-			}
-
-			if message != "" {
-				s.incidents[i].Updates = append(s.incidents[i].Updates, IncidentUpdate{
-					ID:        generateID(),
-					Status:    status,
-					Message:   message,
-					CreatedAt: time.Now(),
-				})
-			}
-
-			s.save()
-			return &s.incidents[i], nil
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketIncidents)
+		data := b.Get([]byte(id))
+		if data == nil {
+			return nil
 		}
-	}
 
-	return nil, nil
+		var inc Incident
+		if err := json.Unmarshal(data, &inc); err != nil {
+			return err
+		}
+
+		inc.Status = status
+		inc.UpdatedAt = time.Now()
+
+		if status == "resolved" {
+			now := time.Now()
+			inc.ResolvedAt = &now
+		}
+
+		if message != "" {
+			inc.Updates = append(inc.Updates, IncidentUpdate{
+				ID:        generateID(),
+				Status:    status,
+				Message:   message,
+				CreatedAt: time.Now(),
+			})
+		}
+
+		newData, err := json.Marshal(inc)
+		if err != nil {
+			return err
+		}
+
+		incident = &inc
+		return b.Put([]byte(id), newData)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return incident, nil
 }
 
 // GetIncidents returns all incidents
@@ -199,17 +232,31 @@ func (s *Storage) GetIncidents(limit int, activeOnly bool) []Incident {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []Incident
-	for _, inc := range s.incidents {
-		if activeOnly && inc.Status == "resolved" {
-			continue
+	var incidents []Incident
+
+	s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketIncidents)
+		c := b.Cursor()
+
+		for k, v := c.Last(); k != nil; k, v = c.Prev() {
+			var inc Incident
+			if err := json.Unmarshal(v, &inc); err != nil {
+				continue
+			}
+
+			if activeOnly && inc.Status == "resolved" {
+				continue
+			}
+
+			incidents = append(incidents, inc)
+			if limit > 0 && len(incidents) >= limit {
+				break
+			}
 		}
-		result = append(result, inc)
-		if limit > 0 && len(result) >= limit {
-			break
-		}
-	}
-	return result
+		return nil
+	})
+
+	return incidents
 }
 
 // GetIncident returns a specific incident
@@ -217,12 +264,24 @@ func (s *Storage) GetIncident(id string) *Incident {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for _, inc := range s.incidents {
-		if inc.ID == id {
-			return &inc
+	var incident *Incident
+
+	s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketIncidents)
+		data := b.Get([]byte(id))
+		if data == nil {
+			return nil
 		}
-	}
-	return nil
+
+		var inc Incident
+		if err := json.Unmarshal(data, &inc); err != nil {
+			return err
+		}
+		incident = &inc
+		return nil
+	})
+
+	return incident
 }
 
 // DeleteIncident deletes an incident
@@ -230,14 +289,12 @@ func (s *Storage) DeleteIncident(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for i := range s.incidents {
-		if s.incidents[i].ID == id {
-			s.incidents = append(s.incidents[:i], s.incidents[i+1:]...)
-			s.save()
-			return true
-		}
-	}
-	return false
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketIncidents)
+		return b.Delete([]byte(id))
+	})
+
+	return err == nil
 }
 
 // === Maintenance Management ===
@@ -256,9 +313,18 @@ func (s *Storage) CreateMaintenance(m Maintenance) (*Maintenance, error) {
 		m.Status = "scheduled"
 	}
 
-	s.maintenance = append([]Maintenance{m}, s.maintenance...)
-	s.save()
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketMaintenance)
+		data, err := json.Marshal(m)
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte(m.ID), data)
+	})
 
+	if err != nil {
+		return nil, err
+	}
 	return &m, nil
 }
 
@@ -267,18 +333,29 @@ func (s *Storage) GetMaintenance(upcoming bool) []Maintenance {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if !upcoming {
-		return s.maintenance
-	}
+	var maintenance []Maintenance
 
-	var result []Maintenance
-	now := time.Now()
-	for _, m := range s.maintenance {
-		if m.ScheduledEnd.After(now) || m.Status == "in_progress" {
-			result = append(result, m)
+	s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketMaintenance)
+		c := b.Cursor()
+
+		now := time.Now()
+		for k, v := c.Last(); k != nil; k, v = c.Prev() {
+			var m Maintenance
+			if err := json.Unmarshal(v, &m); err != nil {
+				continue
+			}
+
+			if upcoming && m.ScheduledEnd.Before(now) && m.Status != "in_progress" {
+				continue
+			}
+
+			maintenance = append(maintenance, m)
 		}
-	}
-	return result
+		return nil
+	})
+
+	return maintenance
 }
 
 // UpdateMaintenance updates a maintenance window
@@ -286,15 +363,36 @@ func (s *Storage) UpdateMaintenance(id string, status string) (*Maintenance, err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for i := range s.maintenance {
-		if s.maintenance[i].ID == id {
-			s.maintenance[i].Status = status
-			s.maintenance[i].UpdatedAt = time.Now()
-			s.save()
-			return &s.maintenance[i], nil
+	var maintenance *Maintenance
+
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketMaintenance)
+		data := b.Get([]byte(id))
+		if data == nil {
+			return nil
 		}
+
+		var m Maintenance
+		if err := json.Unmarshal(data, &m); err != nil {
+			return err
+		}
+
+		m.Status = status
+		m.UpdatedAt = time.Now()
+
+		newData, err := json.Marshal(m)
+		if err != nil {
+			return err
+		}
+
+		maintenance = &m
+		return b.Put([]byte(id), newData)
+	})
+
+	if err != nil {
+		return nil, err
 	}
-	return nil, nil
+	return maintenance, nil
 }
 
 // === History Management ===
@@ -304,29 +402,41 @@ func (s *Storage) RecordDailyStatus(serviceName string, status DailyStatus) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.history[serviceName] == nil {
-		s.history[serviceName] = []DailyStatus{}
-	}
+	s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketHistory)
 
-	// Check if we already have an entry for today
-	for i, existing := range s.history[serviceName] {
-		if existing.Date == status.Date {
-			// Update existing entry
-			s.history[serviceName][i] = status
-			s.save()
-			return
+		// Get existing history for this service
+		var history []DailyStatus
+		key := []byte(serviceName)
+		if data := b.Get(key); data != nil {
+			json.Unmarshal(data, &history)
 		}
-	}
 
-	// Add new entry
-	s.history[serviceName] = append(s.history[serviceName], status)
+		// Check if we already have an entry for today
+		found := false
+		for i, existing := range history {
+			if existing.Date == status.Date {
+				history[i] = status
+				found = true
+				break
+			}
+		}
 
-	// Keep only last 90 days
-	if len(s.history[serviceName]) > 90 {
-		s.history[serviceName] = s.history[serviceName][len(s.history[serviceName])-90:]
-	}
+		if !found {
+			history = append(history, status)
+		}
 
-	s.save()
+		// Keep only last 90 days
+		if len(history) > 90 {
+			history = history[len(history)-90:]
+		}
+
+		data, err := json.Marshal(history)
+		if err != nil {
+			return err
+		}
+		return b.Put(key, data)
+	})
 }
 
 // GetHistory returns history for a service
@@ -334,7 +444,17 @@ func (s *Storage) GetHistory(serviceName string, days int) []DailyStatus {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	history := s.history[serviceName]
+	var history []DailyStatus
+
+	s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketHistory)
+		data := b.Get([]byte(serviceName))
+		if data != nil {
+			json.Unmarshal(data, &history)
+		}
+		return nil
+	})
+
 	if days > 0 && len(history) > days {
 		return history[len(history)-days:]
 	}
@@ -347,17 +467,106 @@ func (s *Storage) GetAllHistory(days int) map[string][]DailyStatus {
 	defer s.mu.RUnlock()
 
 	result := make(map[string][]DailyStatus)
-	for service, history := range s.history {
-		if days > 0 && len(history) > days {
-			result[service] = history[len(history)-days:]
-		} else {
-			result[service] = history
+
+	s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketHistory)
+		c := b.Cursor()
+
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			var history []DailyStatus
+			if err := json.Unmarshal(v, &history); err != nil {
+				continue
+			}
+
+			serviceName := string(k)
+			if days > 0 && len(history) > days {
+				result[serviceName] = history[len(history)-days:]
+			} else {
+				result[serviceName] = history
+			}
 		}
-	}
+		return nil
+	})
+
 	return result
 }
 
-// Helper to generate unique IDs
+// === Service Check History (for uptime bars) ===
+
+// SaveServiceCheckHistory persists the check history for a service
+func (s *Storage) SaveServiceCheckHistory(serviceName string, history []CheckPoint, uptime float64, lastCheck time.Time, errorMsg string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketCheckHistory)
+
+		data := ServiceCheckHistory{
+			ServiceName:  serviceName,
+			History:      history,
+			Uptime:       uptime,
+			LastCheck:    lastCheck,
+			ErrorMessage: errorMsg,
+		}
+
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte(serviceName), jsonData)
+	})
+}
+
+// GetServiceCheckHistory retrieves persisted check history for a service
+func (s *Storage) GetServiceCheckHistory(serviceName string) *ServiceCheckHistory {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var history *ServiceCheckHistory
+
+	s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketCheckHistory)
+		data := b.Get([]byte(serviceName))
+		if data == nil {
+			return nil
+		}
+
+		var h ServiceCheckHistory
+		if err := json.Unmarshal(data, &h); err != nil {
+			return err
+		}
+		history = &h
+		return nil
+	})
+
+	return history
+}
+
+// GetAllServiceCheckHistory retrieves all persisted check histories
+func (s *Storage) GetAllServiceCheckHistory() map[string]*ServiceCheckHistory {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make(map[string]*ServiceCheckHistory)
+
+	s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketCheckHistory)
+		c := b.Cursor()
+
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			var h ServiceCheckHistory
+			if err := json.Unmarshal(v, &h); err != nil {
+				continue
+			}
+			result[string(k)] = &h
+		}
+		return nil
+	})
+
+	return result
+}
+
+// Helper to generate unique IDs using crypto/rand for proper entropy
 func generateID() string {
 	return time.Now().Format("20060102150405") + randomString(6)
 }
@@ -365,9 +574,16 @@ func generateID() string {
 func randomString(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, n)
+	randBytes := make([]byte, n)
+	if _, err := rand.Read(randBytes); err != nil {
+		// Fallback to less secure but functional method
+		for i := range b {
+			b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
+		}
+		return string(b)
+	}
 	for i := range b {
-		b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
-		time.Sleep(time.Nanosecond)
+		b[i] = letters[int(randBytes[i])%len(letters)]
 	}
 	return string(b)
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/status/config"
+	"github.com/status/storage"
 )
 
 // Status represents the current status of a service
@@ -61,10 +62,11 @@ type Monitor struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	maxHistory  int
+	storage     *storage.Storage
 }
 
 // NewMonitor creates a new monitor instance
-func NewMonitor(services []config.Service) *Monitor {
+func NewMonitor(services []config.Service, store *storage.Storage) *Monitor {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Create HTTP client with custom transport
@@ -94,11 +96,18 @@ func NewMonitor(services []config.Service) *Monitor {
 		ctx:        ctx,
 		cancel:     cancel,
 		maxHistory: 90, // Keep 90 data points (e.g., 90 checks)
+		storage:    store,
+	}
+
+	// Load persisted check history if available
+	var persistedHistory map[string]*storage.ServiceCheckHistory
+	if store != nil {
+		persistedHistory = store.GetAllServiceCheckHistory()
 	}
 
 	// Initialize statuses
 	for _, svc := range services {
-		m.statuses[svc.Name] = &ServiceStatus{
+		status := &ServiceStatus{
 			Name:        svc.Name,
 			Group:       svc.Group,
 			URL:         svc.URL,
@@ -108,6 +117,30 @@ func NewMonitor(services []config.Service) *Monitor {
 			Uptime:      100.0,
 			History:     make([]HistoryPoint, 0, m.maxHistory),
 		}
+
+		// Restore persisted history if available
+		if persisted, ok := persistedHistory[svc.Name]; ok && persisted != nil {
+			for _, cp := range persisted.History {
+				status.History = append(status.History, HistoryPoint{
+					Timestamp:      cp.Timestamp,
+					ResponseTimeMs: cp.ResponseTimeMs,
+					Status:         Status(cp.Status),
+					StatusCode:     cp.StatusCode,
+				})
+			}
+			status.Uptime = persisted.Uptime
+			status.LastCheck = persisted.LastCheck
+			status.ErrorMessage = persisted.ErrorMessage
+			if len(status.History) > 0 {
+				lastPoint := status.History[len(status.History)-1]
+				status.Status = lastPoint.Status
+				status.ResponseTimeMs = lastPoint.ResponseTimeMs
+				status.ResponseTime = time.Duration(lastPoint.ResponseTimeMs) * time.Millisecond
+				status.StatusCode = lastPoint.StatusCode
+			}
+		}
+
+		m.statuses[svc.Name] = status
 	}
 
 	return m
@@ -238,12 +271,42 @@ func (m *Monitor) checkService(svc config.Service) {
 		m.checkHTTP(svc)
 	case config.CheckTCP:
 		m.checkTCP(svc)
+	case config.CheckUDP:
+		m.checkUDP(svc)
 	case config.CheckICMP:
 		m.checkICMP(svc)
 	case config.CheckDNS:
 		m.checkDNS(svc)
 	case config.CheckWebSocket:
 		m.checkWebSocket(svc)
+	case config.CheckGRPC:
+		m.checkGRPC(svc)
+	case config.CheckQUIC:
+		m.checkQUIC(svc)
+	case config.CheckSMTP:
+		m.checkSMTP(svc)
+	case config.CheckSSH:
+		m.checkSSH(svc)
+	case config.CheckTLS:
+		m.checkTLS(svc)
+	case config.CheckPOP3:
+		m.checkPOP3(svc)
+	case config.CheckIMAP:
+		m.checkIMAP(svc)
+	case config.CheckFTP:
+		m.checkFTP(svc)
+	case config.CheckNTP:
+		m.checkNTP(svc)
+	case config.CheckLDAP:
+		m.checkLDAP(svc)
+	case config.CheckRedis:
+		m.checkRedis(svc)
+	case config.CheckMongoDB:
+		m.checkMongoDB(svc)
+	case config.CheckMySQL:
+		m.checkMySQL(svc)
+	case config.CheckPostgres:
+		m.checkPostgres(svc)
 	default:
 		m.checkHTTP(svc) // Default to HTTP
 	}
@@ -510,6 +573,234 @@ func (m *Monitor) checkWebSocket(svc config.Service) {
 	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
 }
 
+// checkUDP performs a UDP connectivity check
+func (m *Monitor) checkUDP(svc config.Service) {
+	address := svc.Host
+	if svc.Port > 0 {
+		address = fmt.Sprintf("%s:%d", svc.Host, svc.Port)
+	}
+
+	start := time.Now()
+	conn, err := net.DialTimeout("udp", address, svc.Timeout)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	// Set deadline for the entire operation
+	conn.SetDeadline(time.Now().Add(svc.Timeout))
+
+	// Send payload if configured, otherwise send a simple probe
+	payload := []byte(svc.UDPPayload)
+	if len(payload) == 0 {
+		payload = []byte{0x00} // Minimal probe packet
+	}
+
+	_, err = conn.Write(payload)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, "write failed: "+err.Error())
+		return
+	}
+
+	// Try to read response (UDP is connectionless, so this may timeout)
+	// For many UDP services, no response is expected
+	buf := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(svc.Timeout / 2))
+	n, err := conn.Read(buf)
+	responseTime := time.Since(start)
+
+	var status Status
+	var errMsg string
+
+	if err != nil {
+		// For UDP, timeout on read is often OK (service may not send response)
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			// Check if we expect a response
+			if svc.UDPExpected != "" {
+				status = StatusDown
+				errMsg = "no response received"
+			} else {
+				// No response expected, consider operational if we could send
+				status = StatusOperational
+			}
+		} else {
+			status = StatusDown
+			errMsg = "read error: " + err.Error()
+		}
+	} else {
+		// Got a response
+		if svc.UDPExpected != "" && !strings.Contains(string(buf[:n]), svc.UDPExpected) {
+			status = StatusDown
+			errMsg = "unexpected response"
+		} else if responseTime < 500*time.Millisecond {
+			status = StatusOperational
+		} else if responseTime < 2*time.Second {
+			status = StatusDegraded
+			errMsg = "slow response"
+		} else {
+			status = StatusDegraded
+			errMsg = "very slow response"
+		}
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
+}
+
+// checkGRPC performs a gRPC health check (TCP connectivity to gRPC port)
+func (m *Monitor) checkGRPC(svc config.Service) {
+	// Extract host from URL or use Host field
+	host := svc.Host
+	if host == "" && svc.URL != "" {
+		host = strings.TrimPrefix(svc.URL, "grpc://")
+		host = strings.TrimPrefix(host, "grpcs://")
+	}
+
+	address := host
+	if svc.Port > 0 {
+		address = fmt.Sprintf("%s:%d", host, svc.Port)
+	} else if !strings.Contains(host, ":") {
+		address = host + ":443" // Default gRPC port
+	}
+
+	start := time.Now()
+	var conn net.Conn
+	var err error
+
+	// Check if TLS is needed (grpcs:// prefix or port 443)
+	useTLS := strings.HasPrefix(svc.URL, "grpcs://") || strings.HasSuffix(address, ":443")
+
+	if useTLS {
+		dialer := &net.Dialer{Timeout: svc.Timeout}
+		conn, err = tls.DialWithDialer(dialer, "tcp", address, &tls.Config{
+			InsecureSkipVerify: svc.SkipTLSVerify,
+		})
+	} else {
+		conn, err = net.DialTimeout("tcp", address, svc.Timeout)
+	}
+	responseTime := time.Since(start)
+
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, responseTime, 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	var status Status
+	var errMsg string
+
+	if responseTime < 500*time.Millisecond {
+		status = StatusOperational
+	} else if responseTime < 2*time.Second {
+		status = StatusDegraded
+		errMsg = "slow connection"
+	} else {
+		status = StatusDegraded
+		errMsg = "very slow connection"
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
+}
+
+// checkQUIC performs a QUIC/HTTP3 connectivity check
+func (m *Monitor) checkQUIC(svc config.Service) {
+	// Extract host from URL
+	url := svc.URL
+	host := strings.TrimPrefix(url, "https://")
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "quic://")
+
+	// Remove path
+	if idx := strings.Index(host, "/"); idx != -1 {
+		host = host[:idx]
+	}
+
+	// Add port if not present
+	if !strings.Contains(host, ":") {
+		if svc.Port > 0 {
+			host = fmt.Sprintf("%s:%d", host, svc.Port)
+		} else {
+			host = host + ":443"
+		}
+	}
+
+	start := time.Now()
+
+	// QUIC uses UDP, so we first check UDP connectivity
+	// Then perform a TLS handshake with QUIC ALPN
+	udpAddr, err := net.ResolveUDPAddr("udp", host)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, "DNS resolution failed: "+err.Error())
+		return
+	}
+
+	conn, err := net.DialUDP("udp", nil, udpAddr)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(svc.Timeout))
+
+	// Send QUIC Initial packet header (simplified probe)
+	// This is a minimal QUIC version negotiation probe
+	// Real QUIC would require full crypto handshake
+	quicProbe := []byte{
+		0xc0,             // Long header, fixed bit
+		0x00, 0x00, 0x00, 0x01, // Version (QUIC v1)
+		0x08,             // DCID length
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // DCID (random)
+		0x00,             // SCID length
+	}
+
+	_, err = conn.Write(quicProbe)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, "write failed: "+err.Error())
+		return
+	}
+
+	// Read response (server should respond with version negotiation or retry)
+	buf := make([]byte, 1200)
+	conn.SetReadDeadline(time.Now().Add(svc.Timeout))
+	n, err := conn.Read(buf)
+	responseTime := time.Since(start)
+
+	var status Status
+	var errMsg string
+
+	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			// Some QUIC servers may not respond to invalid initial packets
+			// but if UDP is open, consider it potentially operational
+			status = StatusDegraded
+			errMsg = "QUIC probe timeout (port may be open)"
+		} else {
+			status = StatusDown
+			errMsg = err.Error()
+		}
+	} else if n > 0 {
+		// Got a response - QUIC is definitely available
+		// Check for QUIC version negotiation (first byte should have form bit set)
+		if buf[0]&0x80 != 0 {
+			status = StatusOperational
+		} else {
+			status = StatusOperational
+			errMsg = "QUIC response received"
+		}
+	} else {
+		status = StatusDown
+		errMsg = "empty response"
+	}
+
+	if status == StatusOperational && responseTime > 500*time.Millisecond {
+		status = StatusDegraded
+		errMsg = "slow QUIC handshake"
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
+}
+
 // updateStatus updates the status of a service and notifies subscribers
 func (m *Monitor) updateStatus(name string, status Status, responseTime time.Duration, statusCode int, errMsg string) {
 	m.mu.Lock()
@@ -553,6 +844,20 @@ func (m *Monitor) updateStatus(name string, status Status, responseTime time.Dur
 		svcStatus.Uptime = float64(operational) / float64(len(svcStatus.History)) * 100
 	}
 
+	// Persist to storage
+	if m.storage != nil {
+		checkPoints := make([]storage.CheckPoint, len(svcStatus.History))
+		for i, h := range svcStatus.History {
+			checkPoints[i] = storage.CheckPoint{
+				Timestamp:      h.Timestamp,
+				ResponseTimeMs: h.ResponseTimeMs,
+				Status:         string(h.Status),
+				StatusCode:     h.StatusCode,
+			}
+		}
+		m.storage.SaveServiceCheckHistory(name, checkPoints, svcStatus.Uptime, svcStatus.LastCheck, svcStatus.ErrorMessage)
+	}
+
 	// Create copy for notification
 	statusCopy := *svcStatus
 	statusCopy.History = make([]HistoryPoint, len(svcStatus.History))
@@ -576,4 +881,571 @@ func (m *Monitor) notifySubscribers(status *ServiceStatus) {
 			// Channel full, skip
 		}
 	}
+}
+
+// checkSMTP performs an SMTP server check
+func (m *Monitor) checkSMTP(svc config.Service) {
+	host := svc.Host
+	port := svc.Port
+	if port == 0 {
+		port = 25 // Default SMTP port
+	}
+	address := fmt.Sprintf("%s:%d", host, port)
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(svc.Timeout))
+
+	// Read SMTP banner
+	buf := make([]byte, 512)
+	n, err := conn.Read(buf)
+	responseTime := time.Since(start)
+
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, responseTime, 0, "failed to read SMTP banner")
+		return
+	}
+
+	banner := string(buf[:n])
+	var status Status
+	var errMsg string
+	var statusCode int
+
+	// SMTP banner should start with 220
+	if strings.HasPrefix(banner, "220") {
+		statusCode = 220
+		if responseTime < 1*time.Second {
+			status = StatusOperational
+		} else {
+			status = StatusDegraded
+			errMsg = "slow SMTP response"
+		}
+	} else {
+		status = StatusDown
+		errMsg = fmt.Sprintf("unexpected SMTP response: %s", strings.TrimSpace(banner))
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, statusCode, errMsg)
+}
+
+// checkSSH performs an SSH server check
+func (m *Monitor) checkSSH(svc config.Service) {
+	host := svc.Host
+	port := svc.Port
+	if port == 0 {
+		port = 22 // Default SSH port
+	}
+	address := fmt.Sprintf("%s:%d", host, port)
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(svc.Timeout))
+
+	// Read SSH banner
+	buf := make([]byte, 256)
+	n, err := conn.Read(buf)
+	responseTime := time.Since(start)
+
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, responseTime, 0, "failed to read SSH banner")
+		return
+	}
+
+	banner := string(buf[:n])
+	var status Status
+	var errMsg string
+
+	// SSH banner should start with SSH-
+	if strings.HasPrefix(banner, "SSH-") {
+		if responseTime < 500*time.Millisecond {
+			status = StatusOperational
+		} else {
+			status = StatusDegraded
+			errMsg = "slow SSH response"
+		}
+	} else {
+		status = StatusDown
+		errMsg = "invalid SSH banner"
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
+}
+
+// checkTLS performs TLS certificate validation
+func (m *Monitor) checkTLS(svc config.Service) {
+	host := svc.Host
+	if host == "" {
+		// Extract host from URL
+		host = strings.TrimPrefix(svc.URL, "https://")
+		host = strings.TrimPrefix(host, "http://")
+		if idx := strings.Index(host, "/"); idx != -1 {
+			host = host[:idx]
+		}
+	}
+
+	port := svc.Port
+	if port == 0 {
+		port = 443
+	}
+	address := fmt.Sprintf("%s:%d", host, port)
+
+	start := time.Now()
+	conn, err := tls.DialWithDialer(
+		&net.Dialer{Timeout: svc.Timeout},
+		"tcp",
+		address,
+		&tls.Config{
+			InsecureSkipVerify: false,
+			ServerName:         strings.Split(host, ":")[0],
+		},
+	)
+	responseTime := time.Since(start)
+
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, responseTime, 0, "TLS error: "+err.Error())
+		return
+	}
+	defer conn.Close()
+
+	// Check certificate expiry
+	certs := conn.ConnectionState().PeerCertificates
+	if len(certs) == 0 {
+		m.updateStatus(svc.Name, StatusDown, responseTime, 0, "no certificates found")
+		return
+	}
+
+	cert := certs[0]
+	daysUntilExpiry := int(time.Until(cert.NotAfter).Hours() / 24)
+	warnDays := svc.TLSWarnDays
+	if warnDays == 0 {
+		warnDays = 30 // Default 30 days warning
+	}
+
+	var status Status
+	var errMsg string
+
+	if daysUntilExpiry <= 0 {
+		status = StatusDown
+		errMsg = "certificate expired"
+	} else if daysUntilExpiry <= 7 {
+		status = StatusDown
+		errMsg = fmt.Sprintf("certificate expires in %d days", daysUntilExpiry)
+	} else if daysUntilExpiry <= warnDays {
+		status = StatusDegraded
+		errMsg = fmt.Sprintf("certificate expires in %d days", daysUntilExpiry)
+	} else {
+		status = StatusOperational
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, daysUntilExpiry, errMsg)
+}
+
+// checkPOP3 performs a POP3 server check
+func (m *Monitor) checkPOP3(svc config.Service) {
+	host := svc.Host
+	port := svc.Port
+	if port == 0 {
+		port = 110 // Default POP3 port (995 for SSL)
+	}
+	address := fmt.Sprintf("%s:%d", host, port)
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(svc.Timeout))
+
+	// Read POP3 banner
+	buf := make([]byte, 512)
+	n, err := conn.Read(buf)
+	responseTime := time.Since(start)
+
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, responseTime, 0, "failed to read POP3 banner")
+		return
+	}
+
+	banner := string(buf[:n])
+	var status Status
+	var errMsg string
+
+	// POP3 banner should start with +OK
+	if strings.HasPrefix(banner, "+OK") {
+		if responseTime < 1*time.Second {
+			status = StatusOperational
+		} else {
+			status = StatusDegraded
+			errMsg = "slow POP3 response"
+		}
+	} else {
+		status = StatusDown
+		errMsg = "invalid POP3 response"
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
+}
+
+// checkIMAP performs an IMAP server check
+func (m *Monitor) checkIMAP(svc config.Service) {
+	host := svc.Host
+	port := svc.Port
+	if port == 0 {
+		port = 143 // Default IMAP port (993 for SSL)
+	}
+	address := fmt.Sprintf("%s:%d", host, port)
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(svc.Timeout))
+
+	// Read IMAP banner
+	buf := make([]byte, 512)
+	n, err := conn.Read(buf)
+	responseTime := time.Since(start)
+
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, responseTime, 0, "failed to read IMAP banner")
+		return
+	}
+
+	banner := string(buf[:n])
+	var status Status
+	var errMsg string
+
+	// IMAP banner should contain OK
+	if strings.Contains(banner, "OK") || strings.HasPrefix(banner, "* OK") {
+		if responseTime < 1*time.Second {
+			status = StatusOperational
+		} else {
+			status = StatusDegraded
+			errMsg = "slow IMAP response"
+		}
+	} else {
+		status = StatusDown
+		errMsg = "invalid IMAP response"
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
+}
+
+// checkFTP performs an FTP server check
+func (m *Monitor) checkFTP(svc config.Service) {
+	host := svc.Host
+	port := svc.Port
+	if port == 0 {
+		port = 21 // Default FTP port
+	}
+	address := fmt.Sprintf("%s:%d", host, port)
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(svc.Timeout))
+
+	// Read FTP banner
+	buf := make([]byte, 512)
+	n, err := conn.Read(buf)
+	responseTime := time.Since(start)
+
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, responseTime, 0, "failed to read FTP banner")
+		return
+	}
+
+	banner := string(buf[:n])
+	var status Status
+	var errMsg string
+	var statusCode int
+
+	// FTP banner should start with 220
+	if strings.HasPrefix(banner, "220") {
+		statusCode = 220
+		if responseTime < 1*time.Second {
+			status = StatusOperational
+		} else {
+			status = StatusDegraded
+			errMsg = "slow FTP response"
+		}
+	} else {
+		status = StatusDown
+		errMsg = "invalid FTP response"
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, statusCode, errMsg)
+}
+
+// checkNTP performs an NTP server check
+func (m *Monitor) checkNTP(svc config.Service) {
+	host := svc.Host
+	port := svc.Port
+	if port == 0 {
+		port = 123 // Default NTP port
+	}
+	address := fmt.Sprintf("%s:%d", host, port)
+
+	start := time.Now()
+	conn, err := net.DialTimeout("udp", address, svc.Timeout)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(svc.Timeout))
+
+	// NTP request packet (mode 3 = client, version 3)
+	ntpPacket := make([]byte, 48)
+	ntpPacket[0] = 0x1B // LI=0, VN=3, Mode=3 (client)
+
+	_, err = conn.Write(ntpPacket)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, "NTP write failed")
+		return
+	}
+
+	buf := make([]byte, 48)
+	_, err = conn.Read(buf)
+	responseTime := time.Since(start)
+
+	var status Status
+	var errMsg string
+
+	if err != nil {
+		status = StatusDown
+		errMsg = "NTP read failed"
+	} else if buf[0]&0x07 == 4 { // Mode 4 = server
+		if responseTime < 200*time.Millisecond {
+			status = StatusOperational
+		} else {
+			status = StatusDegraded
+			errMsg = "slow NTP response"
+		}
+	} else {
+		status = StatusDown
+		errMsg = "invalid NTP response"
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
+}
+
+// checkLDAP performs an LDAP server check
+func (m *Monitor) checkLDAP(svc config.Service) {
+	host := svc.Host
+	port := svc.Port
+	if port == 0 {
+		port = 389 // Default LDAP port (636 for LDAPS)
+	}
+	address := fmt.Sprintf("%s:%d", host, port)
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
+	responseTime := time.Since(start)
+
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, responseTime, 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	// Just check TCP connectivity for LDAP
+	var status Status
+	var errMsg string
+
+	if responseTime < 500*time.Millisecond {
+		status = StatusOperational
+	} else {
+		status = StatusDegraded
+		errMsg = "slow LDAP connection"
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
+}
+
+// checkRedis performs a Redis server check
+func (m *Monitor) checkRedis(svc config.Service) {
+	host := svc.Host
+	port := svc.Port
+	if port == 0 {
+		port = 6379 // Default Redis port
+	}
+	address := fmt.Sprintf("%s:%d", host, port)
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(svc.Timeout))
+
+	// Send PING command
+	_, err = conn.Write([]byte("PING\r\n"))
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, "Redis write failed")
+		return
+	}
+
+	buf := make([]byte, 64)
+	n, err := conn.Read(buf)
+	responseTime := time.Since(start)
+
+	var status Status
+	var errMsg string
+
+	if err != nil {
+		status = StatusDown
+		errMsg = "Redis read failed"
+	} else if strings.Contains(string(buf[:n]), "PONG") || strings.Contains(string(buf[:n]), "+PONG") {
+		if responseTime < 100*time.Millisecond {
+			status = StatusOperational
+		} else {
+			status = StatusDegraded
+			errMsg = "slow Redis response"
+		}
+	} else {
+		status = StatusDown
+		errMsg = "invalid Redis response"
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
+}
+
+// checkMongoDB performs a MongoDB server check
+func (m *Monitor) checkMongoDB(svc config.Service) {
+	host := svc.Host
+	port := svc.Port
+	if port == 0 {
+		port = 27017 // Default MongoDB port
+	}
+	address := fmt.Sprintf("%s:%d", host, port)
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
+	responseTime := time.Since(start)
+
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, responseTime, 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	// Just check TCP connectivity for MongoDB
+	var status Status
+	var errMsg string
+
+	if responseTime < 200*time.Millisecond {
+		status = StatusOperational
+	} else {
+		status = StatusDegraded
+		errMsg = "slow MongoDB connection"
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
+}
+
+// checkMySQL performs a MySQL server check
+func (m *Monitor) checkMySQL(svc config.Service) {
+	host := svc.Host
+	port := svc.Port
+	if port == 0 {
+		port = 3306 // Default MySQL port
+	}
+	address := fmt.Sprintf("%s:%d", host, port)
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(svc.Timeout))
+
+	// Read MySQL handshake
+	buf := make([]byte, 256)
+	n, err := conn.Read(buf)
+	responseTime := time.Since(start)
+
+	var status Status
+	var errMsg string
+
+	if err != nil {
+		status = StatusDown
+		errMsg = "MySQL read failed"
+	} else if n > 4 && buf[4] == 10 { // Protocol version 10
+		if responseTime < 200*time.Millisecond {
+			status = StatusOperational
+		} else {
+			status = StatusDegraded
+			errMsg = "slow MySQL response"
+		}
+	} else {
+		status = StatusDown
+		errMsg = "invalid MySQL handshake"
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
+}
+
+// checkPostgres performs a PostgreSQL server check
+func (m *Monitor) checkPostgres(svc config.Service) {
+	host := svc.Host
+	port := svc.Port
+	if port == 0 {
+		port = 5432 // Default PostgreSQL port
+	}
+	address := fmt.Sprintf("%s:%d", host, port)
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
+	responseTime := time.Since(start)
+
+	if err != nil {
+		m.updateStatus(svc.Name, StatusDown, responseTime, 0, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	// Just check TCP connectivity for PostgreSQL
+	var status Status
+	var errMsg string
+
+	if responseTime < 200*time.Millisecond {
+		status = StatusOperational
+	} else {
+		status = StatusDegraded
+		errMsg = "slow PostgreSQL connection"
+	}
+
+	m.updateStatus(svc.Name, status, responseTime, 0, errMsg)
 }
