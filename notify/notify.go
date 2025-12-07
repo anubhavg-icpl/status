@@ -96,6 +96,50 @@ type DiscordEmbedFooter struct {
 	Text string `json:"text"`
 }
 
+// MSTeamsPayload for Microsoft Teams webhooks
+type MSTeamsPayload struct {
+	Type       string           `json:"@type"`
+	Context    string           `json:"@context"`
+	ThemeColor string           `json:"themeColor"`
+	Summary    string           `json:"summary"`
+	Sections   []MSTeamsSection `json:"sections"`
+}
+
+type MSTeamsSection struct {
+	ActivityTitle    string        `json:"activityTitle"`
+	ActivitySubtitle string        `json:"activitySubtitle"`
+	Facts            []MSTeamsFact `json:"facts"`
+	Markdown         bool          `json:"markdown"`
+}
+
+type MSTeamsFact struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// PagerDutyPayload for PagerDuty events
+type PagerDutyPayload struct {
+	RoutingKey  string           `json:"routing_key"`
+	EventAction string           `json:"event_action"`
+	DedupKey    string           `json:"dedup_key,omitempty"`
+	Payload     PagerDutyDetails `json:"payload"`
+}
+
+type PagerDutyDetails struct {
+	Summary   string `json:"summary"`
+	Severity  string `json:"severity"`
+	Source    string `json:"source"`
+	Timestamp string `json:"timestamp,omitempty"`
+}
+
+// OpsgeniePayload for Opsgenie alerts
+type OpsgeniePayload struct {
+	Message     string   `json:"message"`
+	Description string   `json:"description,omitempty"`
+	Priority    string   `json:"priority,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+}
+
 // NewNotifier creates a new notifier
 func NewNotifier(webhooks []WebhookConfig) *Notifier {
 	return &Notifier{
@@ -173,6 +217,12 @@ func (n *Notifier) sendWebhook(webhook WebhookConfig, event string, data interfa
 		payload, err = n.formatSlackPayload(event, data, baseURL)
 	case "discord":
 		payload, err = n.formatDiscordPayload(event, data, baseURL)
+	case "teams", "msteams":
+		payload, err = n.formatMSTeamsPayload(event, data, baseURL)
+	case "pagerduty":
+		payload, err = n.formatPagerDutyPayload(event, data, webhook)
+	case "opsgenie":
+		payload, err = n.formatOpsgeniePayload(event, data)
 	default:
 		payload, err = json.Marshal(WebhookPayload{
 			Event:     event,
@@ -324,5 +374,157 @@ func (n *Notifier) severityToDiscordColor(severity string) int {
 		return 3447003 // Blue
 	default:
 		return 9807270 // Gray
+	}
+}
+
+// formatMSTeamsPayload formats payload for Microsoft Teams
+func (n *Notifier) formatMSTeamsPayload(event string, data interface{}, baseURL string) ([]byte, error) {
+	var section MSTeamsSection
+	var themeColor string
+	var summary string
+
+	switch v := data.(type) {
+	case storage.Incident:
+		themeColor = n.severityToTeamsColor(v.Severity)
+		summary = fmt.Sprintf("[%s] %s", v.Status, v.Title)
+		section = MSTeamsSection{
+			ActivityTitle:    v.Title,
+			ActivitySubtitle: fmt.Sprintf("Status: %s | Severity: %s", v.Status, v.Severity),
+			Facts: []MSTeamsFact{
+				{Name: "Status", Value: v.Status},
+				{Name: "Severity", Value: v.Severity},
+				{Name: "Message", Value: v.Message},
+			},
+			Markdown: true,
+		}
+		if len(v.AffectedServices) > 0 {
+			section.Facts = append(section.Facts, MSTeamsFact{
+				Name:  "Affected Services",
+				Value: fmt.Sprintf("%v", v.AffectedServices),
+			})
+		}
+		section.Facts = append(section.Facts, MSTeamsFact{
+			Name:  "Link",
+			Value: fmt.Sprintf("[View Incident](%s/incidents/%s)", baseURL, v.ID),
+		})
+
+	case storage.Maintenance:
+		themeColor = "0078D7" // Blue
+		summary = fmt.Sprintf("Scheduled Maintenance: %s", v.Title)
+		section = MSTeamsSection{
+			ActivityTitle:    v.Title,
+			ActivitySubtitle: "Scheduled Maintenance",
+			Facts: []MSTeamsFact{
+				{Name: "Description", Value: v.Description},
+				{Name: "Start", Value: v.ScheduledStart.Format("Jan 02, 2006 15:04 MST")},
+				{Name: "End", Value: v.ScheduledEnd.Format("Jan 02, 2006 15:04 MST")},
+			},
+			Markdown: true,
+		}
+	}
+
+	return json.Marshal(MSTeamsPayload{
+		Type:       "MessageCard",
+		Context:    "http://schema.org/extensions",
+		ThemeColor: themeColor,
+		Summary:    summary,
+		Sections:   []MSTeamsSection{section},
+	})
+}
+
+func (n *Notifier) severityToTeamsColor(severity string) string {
+	switch severity {
+	case "critical":
+		return "FF0000" // Red
+	case "major":
+		return "FFA500" // Orange
+	case "minor":
+		return "FFFF00" // Yellow
+	default:
+		return "808080" // Gray
+	}
+}
+
+// formatPagerDutyPayload formats payload for PagerDuty
+func (n *Notifier) formatPagerDutyPayload(event string, data interface{}, webhook WebhookConfig) ([]byte, error) {
+	routingKey := webhook.Headers["routing_key"]
+	if routingKey == "" {
+		routingKey = webhook.Headers["integration_key"]
+	}
+
+	var eventAction string
+	var summary string
+	var severity string
+	var dedupKey string
+
+	switch v := data.(type) {
+	case storage.Incident:
+		dedupKey = v.ID
+		summary = fmt.Sprintf("[%s] %s: %s", v.Severity, v.Title, v.Message)
+		severity = n.severityToPagerDuty(v.Severity)
+
+		switch event {
+		case "incident.created":
+			eventAction = "trigger"
+		case "incident.resolved":
+			eventAction = "resolve"
+		default:
+			eventAction = "trigger"
+		}
+	}
+
+	return json.Marshal(PagerDutyPayload{
+		RoutingKey:  routingKey,
+		EventAction: eventAction,
+		DedupKey:    dedupKey,
+		Payload: PagerDutyDetails{
+			Summary:   summary,
+			Severity:  severity,
+			Source:    "status-monitor",
+			Timestamp: time.Now().Format(time.RFC3339),
+		},
+	})
+}
+
+func (n *Notifier) severityToPagerDuty(severity string) string {
+	switch severity {
+	case "critical":
+		return "critical"
+	case "major":
+		return "error"
+	case "minor":
+		return "warning"
+	default:
+		return "info"
+	}
+}
+
+// formatOpsgeniePayload formats payload for Opsgenie
+func (n *Notifier) formatOpsgeniePayload(event string, data interface{}) ([]byte, error) {
+	switch v := data.(type) {
+	case storage.Incident:
+		return json.Marshal(OpsgeniePayload{
+			Message:     fmt.Sprintf("[%s] %s", v.Severity, v.Title),
+			Description: v.Message,
+			Priority:    n.severityToOpsgenie(v.Severity),
+			Tags:        append([]string{v.Status, v.Severity}, v.AffectedServices...),
+		})
+	}
+
+	return json.Marshal(OpsgeniePayload{
+		Message: "Status Update",
+	})
+}
+
+func (n *Notifier) severityToOpsgenie(severity string) string {
+	switch severity {
+	case "critical":
+		return "P1"
+	case "major":
+		return "P2"
+	case "minor":
+		return "P3"
+	default:
+		return "P4"
 	}
 }

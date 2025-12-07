@@ -80,7 +80,10 @@ func NewMonitor(services []config.Service) *Monitor {
 	client := &http.Client{
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse // Don't follow redirects
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			return nil // Follow redirects
 		},
 	}
 

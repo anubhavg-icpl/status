@@ -25,14 +25,31 @@ server:
 storage:
   data_dir: "data"
 
-# API configuration
+# API configuration - supports multiple auth methods
 api:
   enabled: true
-  key: "your-secret-api-key-here"  # Required for creating incidents
+  # Option 1: API Key (X-API-Key header or ?api_key= query param)
+  key: "your-secret-api-key-here"
+
+  # Option 2: Bearer token (Authorization: Bearer <token>)
+  # bearer_token: "your-bearer-token-here"
+
+  # Option 3: Basic Auth
+  # basic_auth:
+  #   enabled: true
+  #   username: "admin"
+  #   password: "secure-password"
+
+  # Option 4: IP Whitelist (allows requests from these IPs without auth)
+  # allowed_ips:
+  #   - "127.0.0.1"
+  #   - "10.0.0.0/8"
+
   rate_limit: 100
 
-# Webhook notifications (Slack, Discord, generic)
+# Webhook notifications - supports Slack, Discord, MS Teams, PagerDuty, Opsgenie, generic
 webhooks:
+  # Slack
   # - id: "slack-alerts"
   #   name: "Slack Alerts"
   #   url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
@@ -40,6 +57,7 @@ webhooks:
   #   events: ["incident.created", "incident.resolved"]
   #   enabled: true
 
+  # Discord
   # - id: "discord-alerts"
   #   name: "Discord Alerts"
   #   url: "https://discord.com/api/webhooks/YOUR/DISCORD/WEBHOOK"
@@ -47,6 +65,35 @@ webhooks:
   #   events: ["*"]  # All events
   #   enabled: true
 
+  # Microsoft Teams
+  # - id: "teams-alerts"
+  #   name: "MS Teams Alerts"
+  #   url: "https://outlook.office.com/webhook/YOUR/TEAMS/WEBHOOK"
+  #   type: "teams"  # or "msteams"
+  #   events: ["incident.created", "incident.updated", "incident.resolved"]
+  #   enabled: true
+
+  # PagerDuty (Events API v2)
+  # - id: "pagerduty-alerts"
+  #   name: "PagerDuty"
+  #   url: "https://events.pagerduty.com/v2/enqueue"
+  #   type: "pagerduty"
+  #   headers:
+  #     routing_key: "YOUR_PAGERDUTY_INTEGRATION_KEY"
+  #   events: ["incident.created", "incident.resolved"]
+  #   enabled: true
+
+  # Opsgenie
+  # - id: "opsgenie-alerts"
+  #   name: "Opsgenie"
+  #   url: "https://api.opsgenie.com/v2/alerts"
+  #   type: "opsgenie"
+  #   headers:
+  #     Authorization: "GenieKey YOUR_OPSGENIE_API_KEY"
+  #   events: ["incident.created"]
+  #   enabled: true
+
+  # Generic webhook (any HTTP endpoint)
   # - id: "generic-webhook"
   #   name: "Custom Webhook"
   #   url: "https://your-server.com/webhook"

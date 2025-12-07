@@ -148,26 +148,99 @@ func (s *Server) withMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// Auth middleware for admin endpoints
+// Auth middleware for admin endpoints - supports multiple auth methods
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.config.API.Key == "" {
+		// Check if any auth is configured
+		hasAuth := s.config.API.Key != "" ||
+			s.config.API.BearerToken != "" ||
+			s.config.API.BasicAuth.Enabled
+
+		if !hasAuth {
 			next(w, r)
 			return
 		}
 
-		apiKey := r.Header.Get("X-API-Key")
-		if apiKey == "" {
-			apiKey = r.URL.Query().Get("api_key")
+		// Check IP whitelist first
+		if len(s.config.API.AllowedIPs) > 0 {
+			clientIP := getClientIP(r)
+			ipAllowed := false
+			for _, ip := range s.config.API.AllowedIPs {
+				if ip == clientIP || ip == "*" {
+					ipAllowed = true
+					break
+				}
+			}
+			if ipAllowed {
+				next(w, r)
+				return
+			}
 		}
 
-		if apiKey != s.config.API.Key {
-			s.jsonError(w, "Unauthorized", http.StatusUnauthorized)
-			return
+		// 1. Check X-API-Key header
+		if s.config.API.Key != "" {
+			apiKey := r.Header.Get("X-API-Key")
+			if apiKey == "" {
+				apiKey = r.Header.Get("X-Api-Key") // Case variation
+			}
+			if apiKey == "" {
+				apiKey = r.URL.Query().Get("api_key")
+			}
+			if apiKey == s.config.API.Key {
+				next(w, r)
+				return
+			}
 		}
 
-		next(w, r)
+		// 2. Check Bearer token
+		if s.config.API.BearerToken != "" {
+			authHeader := r.Header.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				token := strings.TrimPrefix(authHeader, "Bearer ")
+				if token == s.config.API.BearerToken {
+					next(w, r)
+					return
+				}
+			}
+		}
+
+		// 3. Check Basic Auth
+		if s.config.API.BasicAuth.Enabled {
+			username, password, ok := r.BasicAuth()
+			if ok && username == s.config.API.BasicAuth.Username &&
+				password == s.config.API.BasicAuth.Password {
+				next(w, r)
+				return
+			}
+		}
+
+		// No valid auth found
+		w.Header().Set("WWW-Authenticate", `Bearer realm="Status API", Basic realm="Status API"`)
+		s.jsonError(w, "Unauthorized - provide X-API-Key, Bearer token, or Basic auth", http.StatusUnauthorized)
 	}
+}
+
+// getClientIP extracts client IP from request
+func getClientIP(r *http.Request) string {
+	// Check X-Forwarded-For header
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff != "" {
+		ips := strings.Split(xff, ",")
+		return strings.TrimSpace(ips[0])
+	}
+
+	// Check X-Real-IP header
+	xri := r.Header.Get("X-Real-IP")
+	if xri != "" {
+		return xri
+	}
+
+	// Fall back to RemoteAddr
+	ip := r.RemoteAddr
+	if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
+		ip = ip[:colonIdx]
+	}
+	return ip
 }
 
 // === Page Handlers ===

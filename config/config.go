@@ -30,9 +30,19 @@ type StorageConfig struct {
 
 // APIConfig holds API settings
 type APIConfig struct {
-	Enabled   bool   `yaml:"enabled"`
-	Key       string `yaml:"key"` // API key for admin endpoints
-	RateLimit int    `yaml:"rate_limit"`
+	Enabled      bool     `yaml:"enabled"`
+	Key          string   `yaml:"key"`           // API key (X-API-Key header)
+	BearerToken  string   `yaml:"bearer_token"`  // Bearer token auth
+	BasicAuth    BasicAuth `yaml:"basic_auth"`   // Basic auth
+	AllowedIPs   []string `yaml:"allowed_ips"`   // IP whitelist
+	RateLimit    int      `yaml:"rate_limit"`
+}
+
+// BasicAuth holds basic auth credentials
+type BasicAuth struct {
+	Enabled  bool   `yaml:"enabled"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 // WebhookConfig represents a webhook configuration
