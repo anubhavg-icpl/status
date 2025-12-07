@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    <meta name="description" content="{{.Description}}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: {{.Theme.PrimaryColor}};
+            --accent: {{.Theme.AccentColor}};
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a24;
+            --bg-glass: rgba(255, 255, 255, 0.03);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --text-muted: rgba(255, 255, 255, 0.4);
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --success-bg: rgba(16, 185, 129, 0.1);
+            --warning-bg: rgba(245, 158, 11, 0.1);
+            --error-bg: rgba(239, 68, 68, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        /* Animated background */
+        .bg-gradient {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background:
+                radial-gradient(ellipse at 20% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(16, 185, 129, 0.1) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(139, 92, 246, 0.05) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        header {
+            padding: 32px 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 48px;
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 24px;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo-section h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+        }
+
+        .last-updated {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Overall Status Banner */
+        .status-banner {
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 32px 40px;
+            margin-bottom: 48px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            transition: all 0.3s ease;
+        }
+
+        .status-banner.operational {
+            border-color: rgba(16, 185, 129, 0.3);
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, var(--bg-glass) 100%);
+        }
+
+        .status-banner.degraded {
+            border-color: rgba(245, 158, 11, 0.3);
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, var(--bg-glass) 100%);
+        }
+
+        .status-banner.down {
+            border-color: rgba(239, 68, 68, 0.3);
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, var(--bg-glass) 100%);
+        }
+
+        .status-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .status-icon.operational {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+
+        .status-icon.degraded {
+            background: var(--warning-bg);
+            color: var(--warning);
+        }
+
+        .status-icon.down {
+            background: var(--error-bg);
+            color: var(--error);
+        }
+
+        .status-icon svg {
+            width: 32px;
+            height: 32px;
+        }
+
+        .status-text h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .status-text p {
+            color: var(--text-secondary);
+            font-size: 0.9375rem;
+        }
+
+        .status-metrics {
+            margin-left: auto;
+            display: flex;
+            gap: 48px;
+        }
+
+        .metric {
+            text-align: right;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            line-height: 1.2;
+        }
+
+        .metric-value.success { color: var(--success); }
+        .metric-value.warning { color: var(--warning); }
+        .metric-value.error { color: var(--error); }
+
+        .metric-label {
+            font-size: 0.8125rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Service Groups */
+        .service-group {
+            margin-bottom: 40px;
+        }
+
+        .group-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .group-header h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .group-count {
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            background: var(--bg-tertiary);
+            border-radius: 100px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Service Cards */
+        .services-grid {
+            display: grid;
+            gap: 16px;
+        }
+
+        .service-card {
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .service-card:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.05);
+            transform: translateY(-2px);
+        }
+
+        .service-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .service-info {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .service-status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .service-status-dot.operational {
+            background: var(--success);
+            box-shadow: 0 0 12px var(--success);
+        }
+
+        .service-status-dot.degraded {
+            background: var(--warning);
+            box-shadow: 0 0 12px var(--warning);
+        }
+
+        .service-status-dot.down {
+            background: var(--error);
+            box-shadow: 0 0 12px var(--error);
+            animation: pulse-error 2s infinite;
+        }
+
+        .service-status-dot.unknown {
+            background: var(--text-muted);
+        }
+
+        @keyframes pulse-error {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .service-name {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .service-description {
+            font-size: 0.8125rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .service-status-badge {
+            font-size: 0.75rem;
+            font-weight: 500;
+            padding: 6px 12px;
+            border-radius: 100px;
+            text-transform: capitalize;
+        }
+
+        .service-status-badge.operational {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+
+        .service-status-badge.degraded {
+            background: var(--warning-bg);
+            color: var(--warning);
+        }
+
+        .service-status-badge.down {
+            background: var(--error-bg);
+            color: var(--error);
+        }
+
+        .service-status-badge.unknown {
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+        }
+
+        /* Response Time Chart */
+        .service-chart {
+            height: 60px;
+            margin-bottom: 16px;
+        }
+
+        /* Service Metrics Row */
+        .service-metrics {
+            display: flex;
+            gap: 24px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .service-metric {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .service-metric-label {
+            font-size: 0.6875rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .service-metric-value {
+            font-size: 0.9375rem;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Uptime Bar */
+        .uptime-bar-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .uptime-bar {
+            flex: 1;
+            height: 6px;
+            background: var(--bg-tertiary);
+            border-radius: 3px;
+            overflow: hidden;
+            display: flex;
+            gap: 2px;
+        }
+
+        .uptime-segment {
+            flex: 1;
+            height: 100%;
+            border-radius: 2px;
+            transition: background-color 0.3s ease;
+        }
+
+        .uptime-segment.operational { background: var(--success); }
+        .uptime-segment.degraded { background: var(--warning); }
+        .uptime-segment.down { background: var(--error); }
+        .uptime-segment.unknown { background: var(--bg-tertiary); }
+
+        .uptime-percentage {
+            font-size: 0.875rem;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--success);
+            min-width: 60px;
+            text-align: right;
+        }
+
+        /* Incidents Section */
+        .incidents-section {
+            margin-top: 64px;
+            padding-top: 48px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .incidents-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+
+        .incidents-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .incident-card {
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+
+        .incident-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .incident-title {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .incident-severity {
+            font-size: 0.75rem;
+            font-weight: 500;
+            padding: 4px 10px;
+            border-radius: 100px;
+            text-transform: capitalize;
+        }
+
+        .incident-severity.critical {
+            background: var(--error-bg);
+            color: var(--error);
+        }
+
+        .incident-severity.major {
+            background: var(--warning-bg);
+            color: var(--warning);
+        }
+
+        .incident-severity.minor {
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+        }
+
+        .incident-description {
+            color: var(--text-secondary);
+            font-size: 0.9375rem;
+            margin-bottom: 16px;
+        }
+
+        .incident-meta {
+            display: flex;
+            gap: 24px;
+            font-size: 0.8125rem;
+            color: var(--text-muted);
+        }
+
+        .incident-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .incident-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .incident-status-dot.investigating { background: var(--error); }
+        .incident-status-dot.identified { background: var(--warning); }
+        .incident-status-dot.monitoring { background: #3b82f6; }
+        .incident-status-dot.resolved { background: var(--success); }
+
+        /* No incidents message */
+        .no-incidents {
+            text-align: center;
+            padding: 48px;
+            color: var(--text-muted);
+        }
+
+        .no-incidents svg {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 64px;
+            padding: 32px 0;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Connection status */
+        .connection-status {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px 16px;
+            font-size: 0.8125rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 100;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s ease;
+        }
+
+        .connection-status.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .connection-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+        }
+
+        .connection-status.disconnected .connection-dot {
+            background: var(--error);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .status-banner {
+                flex-direction: column;
+                text-align: center;
+                padding: 24px;
+            }
+
+            .status-metrics {
+                margin-left: 0;
+                margin-top: 24px;
+                justify-content: center;
+            }
+
+            .metric {
+                text-align: center;
+            }
+
+            .service-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+
+            .service-metrics {
+                flex-wrap: wrap;
+            }
+
+            .incident-meta {
+                flex-direction: column;
+                gap: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-gradient"></div>
+
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <div class="logo-section">
+                    {{if .Logo}}
+                    <img src="{{.Logo}}" alt="Logo" height="40">
+                    {{end}}
+                    <h1>{{.Title}}</h1>
+                </div>
+                <div class="last-updated">
+                    Last updated: <span id="last-update">just now</span>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <!-- Overall Status Banner -->
+            <div class="status-banner {{.Overall}}" id="status-banner">
+                <div class="status-icon {{.Overall}}" id="status-icon">
+                    <svg id="status-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        {{if eq .Overall "operational"}}
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        {{else if eq .Overall "degraded"}}
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        {{else}}
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="15" y1="9" x2="9" y2="15"></line>
+                        <line x1="9" y1="9" x2="15" y2="15"></line>
+                        {{end}}
+                    </svg>
+                </div>
+                <div class="status-text">
+                    <h2 id="status-title">
+                        {{if eq .Overall "operational"}}All Systems Operational{{else if eq .Overall "degraded"}}Partial System Outage{{else}}Major System Outage{{end}}
+                    </h2>
+                    <p id="status-description">{{.Description}}</p>
+                </div>
+                <div class="status-metrics">
+                    <div class="metric">
+                        <div class="metric-value success" id="metric-uptime">--</div>
+                        <div class="metric-label">Uptime</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="metric-response">--</div>
+                        <div class="metric-label">Avg Response</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Services -->
+            <div id="services-container">
+                <!-- Services will be rendered here by JavaScript -->
+            </div>
+
+            <!-- Incidents -->
+            <section class="incidents-section">
+                <div class="incidents-header">
+                    <h2>Recent Incidents</h2>
+                </div>
+                <div id="incidents-container">
+                    {{if .Incidents}}
+                    {{range .Incidents}}
+                    <div class="incident-card">
+                        <div class="incident-header">
+                            <div class="incident-title">{{.Title}}</div>
+                            <span class="incident-severity {{.Severity}}">{{.Severity}}</span>
+                        </div>
+                        <p class="incident-description">{{.Description}}</p>
+                        <div class="incident-meta">
+                            <div class="incident-status">
+                                <span class="incident-status-dot {{.Status}}"></span>
+                                <span>{{.Status}}</span>
+                            </div>
+                            <div>Created: {{.CreatedAt.Format "Jan 02, 2006 15:04 MST"}}</div>
+                        </div>
+                    </div>
+                    {{end}}
+                    {{else}}
+                    <div class="no-incidents">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                        <p>No recent incidents</p>
+                    </div>
+                    {{end}}
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Powered by <a href="https://github.com/status" target="_blank">Status Monitor</a></p>
+        </footer>
+    </div>
+
+    <div class="connection-status" id="connection-status">
+        <span class="connection-dot"></span>
+        <span class="connection-text">Connected</span>
+    </div>
+
+    <script>
+        // State
+        let services = {};
+        let charts = {};
+        let ws = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 10;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchInitialData();
+            connectWebSocket();
+        });
+
+        // Fetch initial data
+        async function fetchInitialData() {
+            try {
+                const response = await fetch('/api/status');
+                const result = await response.json();
+                if (result.success) {
+                    updateServices(result.data.services);
+                    updateOverallStatus(result.data.overall);
+                }
+            } catch (error) {
+                console.error('Failed to fetch initial data:', error);
+            }
+        }
+
+        // WebSocket connection
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+            ws.onopen = function() {
+                console.log('WebSocket connected');
+                reconnectAttempts = 0;
+                showConnectionStatus(true);
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'initial') {
+                    updateServices(data.services);
+                    updateOverallStatus(data.overall);
+                } else if (data.type === 'update') {
+                    updateService(data.service);
+                    updateOverallStatus(data.overall);
+                }
+
+                updateLastUpdated();
+            };
+
+            ws.onclose = function() {
+                console.log('WebSocket disconnected');
+                showConnectionStatus(false);
+
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    setTimeout(connectWebSocket, Math.min(1000 * reconnectAttempts, 10000));
+                }
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        // Update all services
+        function updateServices(serviceList) {
+            // Group services
+            const groups = {};
+            serviceList.forEach(service => {
+                const group = service.group || 'Services';
+                if (!groups[group]) {
+                    groups[group] = [];
+                }
+                groups[group].push(service);
+                services[service.name] = service;
+            });
+
+            // Render
+            const container = document.getElementById('services-container');
+            container.innerHTML = '';
+
+            Object.entries(groups).forEach(([groupName, groupServices]) => {
+                const groupEl = document.createElement('div');
+                groupEl.className = 'service-group';
+                groupEl.innerHTML = `
+                    <div class="group-header">
+                        <h3>${groupName}</h3>
+                        <span class="group-count">${groupServices.length} services</span>
+                    </div>
+                    <div class="services-grid" id="group-${groupName.replace(/\s+/g, '-')}">
+                        ${groupServices.map(s => renderServiceCard(s)).join('')}
+                    </div>
+                `;
+                container.appendChild(groupEl);
+            });
+
+            // Initialize charts
+            serviceList.forEach(service => {
+                initServiceChart(service);
+            });
+
+            // Update metrics
+            updateMetrics(serviceList);
+        }
+
+        // Render a single service card
+        function renderServiceCard(service) {
+            return `
+                <div class="service-card" id="service-${service.name.replace(/\s+/g, '-')}">
+                    <div class="service-header">
+                        <div class="service-info">
+                            <div class="service-status-dot ${service.status}"></div>
+                            <div>
+                                <div class="service-name">${service.name}</div>
+                                ${service.description ? `<div class="service-description">${service.description}</div>` : ''}
+                            </div>
+                        </div>
+                        <span class="service-status-badge ${service.status}">${service.status}</span>
+                    </div>
+                    <div class="service-chart">
+                        <canvas id="chart-${service.name.replace(/\s+/g, '-')}"></canvas>
+                    </div>
+                    <div class="uptime-bar-container">
+                        <div class="uptime-bar">
+                            ${renderUptimeBar(service.history || [])}
+                        </div>
+                        <div class="uptime-percentage">${service.uptime ? service.uptime.toFixed(2) : '0.00'}%</div>
+                    </div>
+                    <div class="service-metrics">
+                        <div class="service-metric">
+                            <span class="service-metric-label">Response Time</span>
+                            <span class="service-metric-value">${service.response_time_ms || 0}ms</span>
+                        </div>
+                        <div class="service-metric">
+                            <span class="service-metric-label">Last Check</span>
+                            <span class="service-metric-value">${formatLastCheck(service.last_check)}</span>
+                        </div>
+                        <div class="service-metric">
+                            <span class="service-metric-label">Status Code</span>
+                            <span class="service-metric-value">${service.status_code || '-'}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Render uptime bar segments
+        function renderUptimeBar(history) {
+            if (!history || history.length === 0) {
+                return Array(90).fill('<div class="uptime-segment unknown"></div>').join('');
+            }
+
+            // Pad history to 90 segments
+            const segments = [];
+            const startPadding = Math.max(0, 90 - history.length);
+
+            for (let i = 0; i < startPadding; i++) {
+                segments.push('<div class="uptime-segment unknown"></div>');
+            }
+
+            history.slice(-90).forEach(point => {
+                segments.push(`<div class="uptime-segment ${point.status}"></div>`);
+            });
+
+            return segments.join('');
+        }
+
+        // Initialize chart for a service
+        function initServiceChart(service) {
+            const canvasId = `chart-${service.name.replace(/\s+/g, '-')}`;
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+
+            const ctx = canvas.getContext('2d');
+
+            // Destroy existing chart if any
+            if (charts[service.name]) {
+                charts[service.name].destroy();
+            }
+
+            const history = service.history || [];
+            const labels = history.map((_, i) => i);
+            const data = history.map(h => h.response_time_ms);
+
+            charts[service.name] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        borderColor: getStatusColor(service.status),
+                        backgroundColor: getStatusColorBg(service.status),
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: (ctx) => `${ctx.parsed.y}ms`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { display: false },
+                        y: {
+                            display: false,
+                            beginAtZero: true
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+        }
+
+        // Update a single service
+        function updateService(service) {
+            services[service.name] = service;
+
+            const cardId = `service-${service.name.replace(/\s+/g, '-')}`;
+            const card = document.getElementById(cardId);
+
+            if (card) {
+                // Update status dot
+                const dot = card.querySelector('.service-status-dot');
+                dot.className = `service-status-dot ${service.status}`;
+
+                // Update badge
+                const badge = card.querySelector('.service-status-badge');
+                badge.className = `service-status-badge ${service.status}`;
+                badge.textContent = service.status;
+
+                // Update metrics
+                const metrics = card.querySelectorAll('.service-metric-value');
+                if (metrics[0]) metrics[0].textContent = `${service.response_time_ms || 0}ms`;
+                if (metrics[1]) metrics[1].textContent = formatLastCheck(service.last_check);
+                if (metrics[2]) metrics[2].textContent = service.status_code || '-';
+
+                // Update uptime bar
+                const uptimeBar = card.querySelector('.uptime-bar');
+                if (uptimeBar) {
+                    uptimeBar.innerHTML = renderUptimeBar(service.history);
+                }
+
+                // Update uptime percentage
+                const uptimePercentage = card.querySelector('.uptime-percentage');
+                if (uptimePercentage) {
+                    uptimePercentage.textContent = `${service.uptime ? service.uptime.toFixed(2) : '0.00'}%`;
+                }
+
+                // Update chart
+                updateChart(service);
+            }
+
+            // Update global metrics
+            updateMetrics(Object.values(services));
+        }
+
+        // Update chart for a service
+        function updateChart(service) {
+            const chart = charts[service.name];
+            if (!chart) return;
+
+            const history = service.history || [];
+            chart.data.labels = history.map((_, i) => i);
+            chart.data.datasets[0].data = history.map(h => h.response_time_ms);
+            chart.data.datasets[0].borderColor = getStatusColor(service.status);
+            chart.data.datasets[0].backgroundColor = getStatusColorBg(service.status);
+            chart.update('none');
+        }
+
+        // Update overall status
+        function updateOverallStatus(overall) {
+            const banner = document.getElementById('status-banner');
+            const icon = document.getElementById('status-icon');
+            const title = document.getElementById('status-title');
+
+            banner.className = `status-banner ${overall}`;
+            icon.className = `status-icon ${overall}`;
+
+            const titles = {
+                operational: 'All Systems Operational',
+                degraded: 'Partial System Outage',
+                down: 'Major System Outage',
+                unknown: 'Status Unknown'
+            };
+            title.textContent = titles[overall] || titles.unknown;
+
+            // Update SVG icon
+            const svg = document.getElementById('status-svg');
+            if (overall === 'operational') {
+                svg.innerHTML = `
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                `;
+            } else if (overall === 'degraded') {
+                svg.innerHTML = `
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                `;
+            } else {
+                svg.innerHTML = `
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                `;
+            }
+        }
+
+        // Update global metrics
+        function updateMetrics(serviceList) {
+            if (!serviceList || serviceList.length === 0) return;
+
+            let totalUptime = 0;
+            let totalResponse = 0;
+            let responseCount = 0;
+
+            serviceList.forEach(s => {
+                totalUptime += s.uptime || 0;
+                if (s.response_time_ms > 0) {
+                    totalResponse += s.response_time_ms;
+                    responseCount++;
+                }
+            });
+
+            const avgUptime = totalUptime / serviceList.length;
+            const avgResponse = responseCount > 0 ? totalResponse / responseCount : 0;
+
+            document.getElementById('metric-uptime').textContent = `${avgUptime.toFixed(1)}%`;
+            document.getElementById('metric-response').textContent = `${Math.round(avgResponse)}ms`;
+        }
+
+        // Helper functions
+        function getStatusColor(status) {
+            const colors = {
+                operational: '#10b981',
+                degraded: '#f59e0b',
+                down: '#ef4444',
+                unknown: '#6b7280'
+            };
+            return colors[status] || colors.unknown;
+        }
+
+        function getStatusColorBg(status) {
+            const colors = {
+                operational: 'rgba(16, 185, 129, 0.1)',
+                degraded: 'rgba(245, 158, 11, 0.1)',
+                down: 'rgba(239, 68, 68, 0.1)',
+                unknown: 'rgba(107, 114, 128, 0.1)'
+            };
+            return colors[status] || colors.unknown;
+        }
+
+        function formatLastCheck(timestamp) {
+            if (!timestamp || timestamp === '0001-01-01T00:00:00Z') return 'Never';
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = Math.floor((now - date) / 1000);
+
+            if (diff < 60) return `${diff}s ago`;
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return date.toLocaleDateString();
+        }
+
+        function updateLastUpdated() {
+            document.getElementById('last-update').textContent = 'just now';
+        }
+
+        function showConnectionStatus(connected) {
+            const el = document.getElementById('connection-status');
+            el.classList.toggle('disconnected', !connected);
+            el.querySelector('.connection-text').textContent = connected ? 'Connected' : 'Reconnecting...';
+            el.classList.add('visible');
+
+            if (connected) {
+                setTimeout(() => el.classList.remove('visible'), 3000);
+            }
+        }
+    </script>
+</body>
+</html>

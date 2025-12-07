@@ -1,0 +1,14 @@
+# Binary
+status
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
