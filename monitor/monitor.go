@@ -178,28 +178,38 @@ func (m *Monitor) GetStatus(name string) *ServiceStatus {
 }
 
 // GetOverallStatus returns the overall system status
+// Uses smart logic: Major outage only if >50% services down
 func (m *Monitor) GetOverallStatus() Status {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	hasDown := false
-	hasDegraded := false
+	total := len(m.statuses)
+	if total == 0 {
+		return StatusOperational
+	}
+
+	downCount := 0
+	degradedCount := 0
 
 	for _, status := range m.statuses {
 		switch status.Status {
 		case StatusDown:
-			hasDown = true
+			downCount++
 		case StatusDegraded:
-			hasDegraded = true
+			degradedCount++
 		}
 	}
 
-	if hasDown {
+	// Major outage: >50% services are down
+	if downCount > total/2 {
 		return StatusDown
 	}
-	if hasDegraded {
+
+	// Partial outage: some services down or degraded
+	if downCount > 0 || degradedCount > 0 {
 		return StatusDegraded
 	}
+
 	return StatusOperational
 }
 

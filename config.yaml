@@ -111,7 +111,7 @@ services:
   - name: "API Server"
     type: http
     group: "Core Services"
-    url: "https://api.github.com"
+    url: "https://httpbin.org/status/200"
     method: GET
     interval: 30s
     timeout: 10s
