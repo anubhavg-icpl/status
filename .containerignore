@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build artifacts
+status
+*.exe
+*.out
+
+# Data (will be mounted as volume)
+data/
+
+# Documentation
+*.md
+LICENSE
+
+# Development
+.claude/
+.env
+*.log
+
+# Test files
+*_test.go
