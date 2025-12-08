@@ -305,8 +305,14 @@ tolerations: []
 topologySpreadConstraints: []
 verticalPodScaling:
   enabled: false
-volumeMounts: []
-volumes: []
+volumeMounts:
+  - name: config-volume
+    mountPath: /config.yaml
+    subPath: config.yaml
+volumes:
+  - name: config-volume
+    configMap:
+      name: status-config
 waitForSecondsBeforeScalingDown: 30
 winterSoldier:
   action: sleep

@@ -12,3 +12,4 @@ __pycache__/
 
 # OS
 .DS_Store
+k8s/testing.yaml
