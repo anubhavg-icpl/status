@@ -25,7 +25,7 @@ server:
 
 # Data storage
 storage:
-  data_dir: "/data"
+  data_dir: "/tmp/data"
 
 # API configuration - supports multiple auth methods
 api:

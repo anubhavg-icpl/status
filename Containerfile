@@ -30,17 +30,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -o status .
 
 # -----------------------------------------------------------------------------
-# Stage 2: Prepare files with correct permissions
+# Stage 2: Production (distroless for proper non-root support)
 # -----------------------------------------------------------------------------
-FROM docker.io/library/alpine:3.20 AS prepare
-
-# Create data directory with correct ownership for non-root user
-RUN mkdir -p /app/data && chown -R 65534:65534 /app/data
-
-# -----------------------------------------------------------------------------
-# Stage 3: Production (scratch)
-# -----------------------------------------------------------------------------
-FROM scratch
+FROM gcr.io/distroless/static-debian12:nonroot
 
 # Labels
 LABEL org.opencontainers.image.title="Status Page"
@@ -48,36 +40,20 @@ LABEL org.opencontainers.image.description="Enterprise-ready status page with mu
 LABEL org.opencontainers.image.source="https://github.com/anubhavg-icpl/status"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Copy CA certificates for HTTPS
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
-# Copy timezone data
-COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
-
-# Copy binary
+# Copy binary (distroless includes CA certs and tzdata)
 COPY --from=builder /build/status /status
 
-# Copy templates (embedded or external)
+# Copy templates
 COPY --from=builder /build/web/templates /web/templates
 
-# Copy default config (optional, can be mounted)
+# Copy default config
 COPY --from=builder /build/config.yaml /config.yaml
-
-# Copy data directory with correct permissions
-COPY --from=prepare /app/data /data
 
 # Expose port
 EXPOSE 8080
 
-# Health check not available in scratch, use orchestrator probes instead
-# HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-#   CMD ["/status", "-healthcheck"] || exit 1
-
-# Run as non-root (UID 65534 = nobody)
-USER 65534:65534
-
-# Set working directory
-WORKDIR /
+# distroless:nonroot runs as UID 65532 by default
+# Data directory will be created at runtime in /tmp or use mounted volume
 
 # Default command
 ENTRYPOINT ["/status"]
