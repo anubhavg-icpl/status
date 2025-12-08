@@ -30,7 +30,15 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -o status .
 
 # -----------------------------------------------------------------------------
-# Stage 2: Production (scratch)
+# Stage 2: Prepare files with correct permissions
+# -----------------------------------------------------------------------------
+FROM docker.io/library/alpine:3.20 AS prepare
+
+# Create data directory with correct ownership for non-root user
+RUN mkdir -p /app/data && chown -R 65534:65534 /app/data
+
+# -----------------------------------------------------------------------------
+# Stage 3: Production (scratch)
 # -----------------------------------------------------------------------------
 FROM scratch
 
@@ -55,8 +63,8 @@ COPY --from=builder /build/web/templates /web/templates
 # Copy default config (optional, can be mounted)
 COPY --from=builder /build/config.yaml /config.yaml
 
-# Create data directory marker (will be mounted as volume)
-# Note: scratch doesn't have mkdir, directory will be created by volume mount
+# Copy data directory with correct permissions
+COPY --from=prepare /app/data /data
 
 # Expose port
 EXPOSE 8080
@@ -67,6 +75,9 @@ EXPOSE 8080
 
 # Run as non-root (UID 65534 = nobody)
 USER 65534:65534
+
+# Set working directory
+WORKDIR /
 
 # Default command
 ENTRYPOINT ["/status"]
