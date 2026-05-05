@@ -27,21 +27,80 @@ var staticFiles embed.FS
 //go:embed templates/*
 var templateFiles embed.FS
 
+// ipEntry tracks per-IP request counts within a sliding window.
+type ipEntry struct {
+	count     int
+	windowEnd time.Time
+}
+
+// apiRateLimiter is a per-IP fixed-window rate limiter.
+type apiRateLimiter struct {
+	mu      sync.Mutex
+	clients map[string]*ipEntry
+	limit   int
+}
+
+func newAPIRateLimiter(limit int) *apiRateLimiter {
+	if limit <= 0 {
+		limit = 100
+	}
+	rl := &apiRateLimiter{
+		clients: make(map[string]*ipEntry),
+		limit:   limit,
+	}
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		for range ticker.C {
+			rl.mu.Lock()
+			now := time.Now()
+			for ip, e := range rl.clients {
+				if now.After(e.windowEnd) {
+					delete(rl.clients, ip)
+				}
+			}
+			rl.mu.Unlock()
+		}
+	}()
+	return rl
+}
+
+func (rl *apiRateLimiter) allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	now := time.Now()
+	e, ok := rl.clients[ip]
+	if !ok || now.After(e.windowEnd) {
+		rl.clients[ip] = &ipEntry{count: 1, windowEnd: now.Add(time.Minute)}
+		return true
+	}
+	if e.count >= rl.limit {
+		return false
+	}
+	e.count++
+	return true
+}
+
 // Server represents the web server
 type Server struct {
-	config      *config.Config
-	monitor     *monitor.Monitor
-	storage     *storage.Storage
-	notifier    *notify.Notifier
-	feedGen     *feeds.FeedGenerator
-	upgrader    websocket.Upgrader
-	clients     map[*websocket.Conn]bool
-	clientMu    sync.RWMutex
-	server      *http.Server
+	config       *config.Config
+	monitor      *monitor.Monitor
+	storage      *storage.Storage
+	notifier     *notify.Notifier
+	feedGen      *feeds.FeedGenerator
+	upgrader     websocket.Upgrader
+	clients      map[*websocket.Conn]bool
+	clientMu     sync.RWMutex
+	server       *http.Server
+	ctx          context.Context
+	cancel       context.CancelFunc
+	indexTmpl    *template.Template
+	apiDocsTmpl  *template.Template
+	rl           *apiRateLimiter
 }
 
 // NewServer creates a new web server instance
 func NewServer(cfg *config.Config, mon *monitor.Monitor, store *storage.Storage, notif *notify.Notifier) *Server {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
 		config:   cfg,
 		monitor:  mon,
@@ -49,6 +108,7 @@ func NewServer(cfg *config.Config, mon *monitor.Monitor, store *storage.Storage,
 		notifier: notif,
 		feedGen:  feeds.NewFeedGenerator(cfg.Title, cfg.BaseURL),
 		upgrader: websocket.Upgrader{
+			// TODO: restrict CheckOrigin to allowed origins in production instead of allowing all
 			CheckOrigin: func(r *http.Request) bool {
 				return true
 			},
@@ -56,11 +116,27 @@ func NewServer(cfg *config.Config, mon *monitor.Monitor, store *storage.Storage,
 			WriteBufferSize: 1024,
 		},
 		clients: make(map[*websocket.Conn]bool),
+		ctx:     ctx,
+		cancel:  cancel,
+		rl:      newAPIRateLimiter(cfg.API.RateLimit),
 	}
 }
 
 // Start starts the web server
 func (s *Server) Start() error {
+	// Parse templates once at startup
+	indexTmpl, err := template.ParseFS(templateFiles, "templates/index.html")
+	if err != nil {
+		return fmt.Errorf("failed to parse index template: %w", err)
+	}
+	s.indexTmpl = indexTmpl
+
+	apiDocsTmpl, err := template.ParseFS(templateFiles, "templates/api.html")
+	if err != nil {
+		return fmt.Errorf("failed to parse api docs template: %w", err)
+	}
+	s.apiDocsTmpl = apiDocsTmpl
+
 	mux := http.NewServeMux()
 
 	// Serve static files
@@ -74,29 +150,32 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/favicon.ico", s.handleFavicon)
 	mux.HandleFunc("/favicon.svg", s.handleFavicon)
 
-	// === Public API Routes ===
-	mux.HandleFunc("/api/status", s.handleAPIStatus)
-	mux.HandleFunc("/api/status/", s.handleAPIServiceStatus)
-	mux.HandleFunc("/api/summary", s.handleAPISummary)
-	mux.HandleFunc("/api/components", s.handleAPIComponents)
+	// === Public API Routes (rate limited) ===
+	mux.HandleFunc("/api/status", s.withRateLimit(s.handleAPIStatus))
+	mux.HandleFunc("/api/status/", s.withRateLimit(s.handleAPIServiceStatus))
+	mux.HandleFunc("/api/summary", s.withRateLimit(s.handleAPISummary))
+	mux.HandleFunc("/api/components", s.withRateLimit(s.handleAPIComponents))
 
 	// History API
-	mux.HandleFunc("/api/history", s.handleAPIHistory)
-	mux.HandleFunc("/api/history/", s.handleAPIServiceHistory)
-	mux.HandleFunc("/api/uptime", s.handleAPIUptime)
+	mux.HandleFunc("/api/history", s.withRateLimit(s.handleAPIHistory))
+	mux.HandleFunc("/api/history/", s.withRateLimit(s.handleAPIServiceHistory))
+	mux.HandleFunc("/api/uptime", s.withRateLimit(s.handleAPIUptime))
 
 	// Incidents API (public read, authenticated write)
-	mux.HandleFunc("/api/incidents", s.handleAPIIncidents)
-	mux.HandleFunc("/api/incidents/", s.handleAPIIncident)
+	mux.HandleFunc("/api/incidents", s.withRateLimit(s.handleAPIIncidents))
+	mux.HandleFunc("/api/incidents/", s.withRateLimit(s.handleAPIIncident))
 
 	// Maintenance API
-	mux.HandleFunc("/api/maintenance", s.handleAPIMaintenance)
-	mux.HandleFunc("/api/maintenance/", s.handleAPIMaintenanceItem)
+	mux.HandleFunc("/api/maintenance", s.withRateLimit(s.handleAPIMaintenance))
+	mux.HandleFunc("/api/maintenance/", s.withRateLimit(s.handleAPIMaintenanceItem))
 
 	// Metrics API
-	mux.HandleFunc("/api/metrics", s.handleAPIMetrics)
+	mux.HandleFunc("/api/metrics", s.withRateLimit(s.handleAPIMetrics))
 
-	// API Documentation
+	// === Subscription Routes (rate limited) ===
+	mux.HandleFunc("/api/subscribe", s.withRateLimit(s.handleSubscribe))
+
+	// API Documentation (not rate limited — serves HTML docs)
 	mux.HandleFunc("/api/", s.handleAPIDocs)
 
 	// === Feed Routes ===
@@ -104,9 +183,6 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/feed/atom", s.handleAtomFeed)
 	mux.HandleFunc("/feed/json", s.handleJSONFeed)
 	mux.HandleFunc("/feed", s.handleRSSFeed) // Default to RSS
-
-	// === Subscription Routes ===
-	mux.HandleFunc("/api/subscribe", s.handleSubscribe)
 
 	// WebSocket endpoint
 	mux.HandleFunc("/ws", s.handleWebSocket)
@@ -116,6 +192,10 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/history", s.handleHistoryPage)
 	mux.HandleFunc("/incidents/", s.handleIncidentPage)
 
+	// Health check endpoints (no rate limiting)
+	mux.HandleFunc("/healthz", s.handleHealthz)
+	mux.HandleFunc("/readiness", s.handleReadiness)
+
 	s.server = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.config.Server.Port),
 		Handler:      s.withMiddleware(mux),
@@ -124,10 +204,10 @@ func (s *Server) Start() error {
 	}
 
 	// Start broadcasting updates
-	go s.broadcastUpdates()
+	go s.broadcastUpdates(s.ctx)
 
 	// Start daily history recorder
-	go s.recordDailyHistory()
+	go s.recordDailyHistory(s.ctx)
 
 	log.Printf("Starting server on http://localhost:%d", s.config.Server.Port)
 	return s.server.ListenAndServe()
@@ -135,6 +215,7 @@ func (s *Server) Start() error {
 
 // Stop gracefully stops the server
 func (s *Server) Stop(ctx context.Context) error {
+	s.cancel()
 	return s.server.Shutdown(ctx)
 }
 
@@ -146,6 +227,12 @@ func (s *Server) withMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
 
+		// Security headers
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -153,6 +240,21 @@ func (s *Server) withMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// withRateLimit wraps a handler with per-IP fixed-window rate limiting.
+func (s *Server) withRateLimit(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
+			ip = ip[:colonIdx]
+		}
+		if !s.rl.allow(ip) {
+			s.jsonError(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		next(w, r)
+	}
 }
 
 // Auth middleware for admin endpoints - supports multiple auth methods
@@ -184,14 +286,12 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 
-		// 1. Check X-API-Key header
+		// 1. Check X-API-Key header only (query-param is intentionally omitted
+		//    because API keys in URLs leak into server logs and browser history).
 		if s.config.API.Key != "" {
 			apiKey := r.Header.Get("X-API-Key")
 			if apiKey == "" {
 				apiKey = r.Header.Get("X-Api-Key") // Case variation
-			}
-			if apiKey == "" {
-				apiKey = r.URL.Query().Get("api_key")
 			}
 			if apiKey == s.config.API.Key {
 				next(w, r)
@@ -227,22 +327,10 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// getClientIP extracts client IP from request
+// getClientIP extracts client IP from RemoteAddr only.
+// X-Forwarded-For and X-Real-IP headers are intentionally ignored to prevent
+// spoofed headers from bypassing IP whitelists.
 func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		ips := strings.Split(xff, ",")
-		return strings.TrimSpace(ips[0])
-	}
-
-	// Check X-Real-IP header
-	xri := r.Header.Get("X-Real-IP")
-	if xri != "" {
-		return xri
-	}
-
-	// Fall back to RemoteAddr
 	ip := r.RemoteAddr
 	if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
 		ip = ip[:colonIdx]
@@ -617,6 +705,9 @@ func (s *Server) handleAPIHistory(w http.ResponseWriter, r *http.Request) {
 	if d := r.URL.Query().Get("days"); d != "" {
 		fmt.Sscanf(d, "%d", &days)
 	}
+	if days < 1 || days > 365 {
+		days = 90
+	}
 
 	history := s.storage.GetAllHistory(days)
 	s.jsonResponse(w, history)
@@ -637,6 +728,9 @@ func (s *Server) handleAPIServiceHistory(w http.ResponseWriter, r *http.Request)
 	days := 90
 	if d := r.URL.Query().Get("days"); d != "" {
 		fmt.Sscanf(d, "%d", &days)
+	}
+	if days < 1 || days > 365 {
+		days = 90
 	}
 
 	history := s.storage.GetHistory(name, days)
@@ -669,6 +763,9 @@ func (s *Server) handleAPIIncidents(w http.ResponseWriter, r *http.Request) {
 		if l := r.URL.Query().Get("limit"); l != "" {
 			fmt.Sscanf(l, "%d", &limit)
 		}
+		if limit < 1 || limit > 500 {
+			limit = 50
+		}
 
 		incidents := s.storage.GetIncidents(limit, activeOnly)
 		s.jsonResponse(w, incidents)
@@ -690,7 +787,8 @@ func (s *Server) createIncident(w http.ResponseWriter, r *http.Request) {
 
 	created, err := s.storage.CreateIncident(incident)
 	if err != nil {
-		s.jsonError(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("internal error: %v", err)
+		s.jsonError(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -732,7 +830,8 @@ func (s *Server) handleAPIIncident(w http.ResponseWriter, r *http.Request) {
 
 			updated, err := s.storage.UpdateIncident(id, update.Status, update.Message)
 			if err != nil {
-				s.jsonError(w, err.Error(), http.StatusInternalServerError)
+				log.Printf("internal error: %v", err)
+				s.jsonError(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
 			if updated == nil {
@@ -785,7 +884,8 @@ func (s *Server) handleAPIMaintenance(w http.ResponseWriter, r *http.Request) {
 
 			created, err := s.storage.CreateMaintenance(m)
 			if err != nil {
-				s.jsonError(w, err.Error(), http.StatusInternalServerError)
+				log.Printf("internal error: %v", err)
+				s.jsonError(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
 
@@ -1010,7 +1110,21 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		"services":  statuses,
 		"incidents": incidents,
 	}
-	conn.WriteJSON(initialData)
+	if err := conn.WriteJSON(initialData); err != nil {
+		log.Printf("WebSocket initial write error: %v", err)
+		s.clientMu.Lock()
+		delete(s.clients, conn)
+		s.clientMu.Unlock()
+		conn.Close()
+		return
+	}
+
+	// Set read deadline and pong handler so dead clients are detected
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
 
 	// Handle connection close
 	go func() {
@@ -1021,68 +1135,119 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			conn.Close()
 		}()
 
+		// Ping ticker to keep connections alive and detect dead clients
+		pingTicker := time.NewTicker(30 * time.Second)
+		defer pingTicker.Stop()
+
+		readErr := make(chan error, 1)
+		go func() {
+			for {
+				_, _, err := conn.ReadMessage()
+				if err != nil {
+					readErr <- err
+					return
+				}
+			}
+		}()
+
 		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
+			select {
+			case <-pingTicker.C:
+				if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second)); err != nil {
+					return
+				}
+			case <-readErr:
 				return
 			}
 		}
 	}()
 }
 
-func (s *Server) broadcastUpdates() {
+func (s *Server) broadcastUpdates(ctx context.Context) {
 	ch := s.monitor.Subscribe()
 	defer s.monitor.Unsubscribe(ch)
 
-	for status := range ch {
-		s.clientMu.RLock()
-		for client := range s.clients {
-			data := map[string]interface{}{
-				"type":    "update",
-				"service": status,
-				"overall": s.monitor.GetOverallStatus(),
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case status, ok := <-ch:
+			if !ok {
+				return
 			}
-			err := client.WriteJSON(data)
-			if err != nil {
-				client.Close()
-				go func(c *websocket.Conn) {
-					s.clientMu.Lock()
-					delete(s.clients, c)
-					s.clientMu.Unlock()
-				}(client)
+			s.clientMu.RLock()
+			for client := range s.clients {
+				data := map[string]interface{}{
+					"type":    "update",
+					"service": status,
+					"overall": s.monitor.GetOverallStatus(),
+				}
+				err := client.WriteJSON(data)
+				if err != nil {
+					client.Close()
+					go func(c *websocket.Conn) {
+						s.clientMu.Lock()
+						delete(s.clients, c)
+						s.clientMu.Unlock()
+					}(client)
+				}
 			}
+			s.clientMu.RUnlock()
 		}
-		s.clientMu.RUnlock()
 	}
 }
 
 // Record daily history
-func (s *Server) recordDailyHistory() {
+func (s *Server) recordDailyHistory(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		statuses := s.monitor.GetAllStatuses()
-		today := time.Now().Format("2006-01-02")
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			statuses := s.monitor.GetAllStatuses()
+			today := time.Now().Format("2006-01-02")
 
-		for _, status := range statuses {
-			dailyStatus := storage.DailyStatus{
-				Date:          today,
-				UptimePercent: status.Uptime,
-				AvgResponseMs: status.ResponseTimeMs,
-				TotalChecks:   len(status.History),
-			}
-
-			// Count successful checks
-			for _, h := range status.History {
-				if h.Status == monitor.StatusOperational || h.Status == monitor.StatusDegraded {
-					dailyStatus.SuccessChecks++
+			for _, status := range statuses {
+				dailyStatus := storage.DailyStatus{
+					Date:          today,
+					UptimePercent: status.Uptime,
+					AvgResponseMs: status.ResponseTimeMs,
+					TotalChecks:   len(status.History),
 				}
-			}
 
-			s.storage.RecordDailyStatus(status.Name, dailyStatus)
+				// Count successful checks
+				for _, h := range status.History {
+					if h.Status == monitor.StatusOperational || h.Status == monitor.StatusDegraded {
+						dailyStatus.SuccessChecks++
+					}
+				}
+
+				s.storage.RecordDailyStatus(status.Name, dailyStatus)
+			}
 		}
 	}
+}
+
+// === Health Check Handlers ===
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"ok"}`))
+}
+
+func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	statuses := s.monitor.GetAllStatuses()
+	if statuses == nil {
+		http.Error(w, `{"status":"not ready"}`, http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"ready"}`))
 }
 
 // === JSON Response Helpers ===
