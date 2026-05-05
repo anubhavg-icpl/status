@@ -1236,19 +1236,28 @@ func (s *Server) publishEvent(eventType string, payload interface{}) {
 
 // subscribeRedisEvents subscribes to Redis pub/sub and fans out events to WebSocket clients.
 func (s *Server) subscribeRedisEvents() {
-	pubsub := s.rdb.Subscribe(context.Background(), "status:events")
+	pubsub := s.rdb.Subscribe(s.ctx, "status:events")
 	defer pubsub.Close()
 	for msg := range pubsub.Channel() {
+		var dead []*websocket.Conn
 		s.clientMu.RLock()
 		for client := range s.clients {
 			if err := client.WriteJSON(map[string]interface{}{
 				"type":    "event",
 				"payload": json.RawMessage(msg.Payload),
 			}); err != nil {
-				client.Close()
+				dead = append(dead, client)
 			}
 		}
 		s.clientMu.RUnlock()
+		if len(dead) > 0 {
+			s.clientMu.Lock()
+			for _, c := range dead {
+				delete(s.clients, c)
+				c.Close()
+			}
+			s.clientMu.Unlock()
+		}
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -386,7 +387,7 @@ func (m *Monitor) checkHTTP(svc config.Service) {
 func (m *Monitor) checkTCP(svc config.Service) {
 	address := svc.Host
 	if svc.Port > 0 {
-		address = fmt.Sprintf("%s:%d", svc.Host, svc.Port)
+		address = net.JoinHostPort(svc.Host, strconv.Itoa(svc.Port))
 	}
 
 	start := time.Now()
@@ -585,7 +586,7 @@ func (m *Monitor) checkWebSocket(svc config.Service) {
 func (m *Monitor) checkUDP(svc config.Service) {
 	address := svc.Host
 	if svc.Port > 0 {
-		address = fmt.Sprintf("%s:%d", svc.Host, svc.Port)
+		address = net.JoinHostPort(svc.Host, strconv.Itoa(svc.Port))
 	}
 
 	start := time.Now()
@@ -682,7 +683,7 @@ func (m *Monitor) checkGRPC(svc config.Service) {
 
 	address := host
 	if svc.Port > 0 {
-		address = fmt.Sprintf("%s:%d", host, svc.Port)
+		address = net.JoinHostPort(host, strconv.Itoa(svc.Port))
 	} else if !strings.Contains(host, ":") {
 		address = host + ":443" // Default gRPC port
 	}
@@ -742,7 +743,7 @@ func (m *Monitor) checkQUIC(svc config.Service) {
 	// Add port if not present
 	if !strings.Contains(host, ":") {
 		if svc.Port > 0 {
-			host = fmt.Sprintf("%s:%d", host, svc.Port)
+			host = net.JoinHostPort(host, strconv.Itoa(svc.Port))
 		} else {
 			host = host + ":443"
 		}
@@ -914,7 +915,7 @@ func (m *Monitor) checkSMTP(svc config.Service) {
 	if port == 0 {
 		port = 25 // Default SMTP port
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
@@ -965,7 +966,7 @@ func (m *Monitor) checkSSH(svc config.Service) {
 	if port == 0 {
 		port = 22 // Default SSH port
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
@@ -1023,7 +1024,7 @@ func (m *Monitor) checkTLS(svc config.Service) {
 	if port == 0 {
 		port = 443
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()
 	conn, err := tls.DialWithDialer(
@@ -1083,7 +1084,7 @@ func (m *Monitor) checkPOP3(svc config.Service) {
 	if port == 0 {
 		port = 110 // Default POP3 port (995 for SSL)
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
@@ -1132,7 +1133,7 @@ func (m *Monitor) checkIMAP(svc config.Service) {
 	if port == 0 {
 		port = 143 // Default IMAP port (993 for SSL)
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
@@ -1181,7 +1182,7 @@ func (m *Monitor) checkFTP(svc config.Service) {
 	if port == 0 {
 		port = 21 // Default FTP port
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
@@ -1232,7 +1233,7 @@ func (m *Monitor) checkNTP(svc config.Service) {
 	if port == 0 {
 		port = 123 // Default NTP port
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()
 	conn, err := net.DialTimeout("udp", address, svc.Timeout)
@@ -1289,7 +1290,7 @@ func (m *Monitor) checkLDAP(svc config.Service) {
 	if port == 0 {
 		port = 389 // Default LDAP port (636 for LDAPS)
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
@@ -1322,7 +1323,7 @@ func (m *Monitor) checkRedis(svc config.Service) {
 	if port == 0 {
 		port = 6379 // Default Redis port
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
@@ -1373,7 +1374,7 @@ func (m *Monitor) checkMongoDB(svc config.Service) {
 	if port == 0 {
 		port = 27017 // Default MongoDB port
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
@@ -1406,7 +1407,7 @@ func (m *Monitor) checkMySQL(svc config.Service) {
 	if port == 0 {
 		port = 3306 // Default MySQL port
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
@@ -1451,7 +1452,7 @@ func (m *Monitor) checkPostgres(svc config.Service) {
 	if port == 0 {
 		port = 5432 // Default PostgreSQL port
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", address, svc.Timeout)
