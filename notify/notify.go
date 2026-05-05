@@ -18,6 +18,7 @@ type Notifier struct {
 	subscribers []Subscriber
 	mu          sync.RWMutex
 	client      *http.Client
+	webhookSem  chan struct{}
 }
 
 // WebhookConfig represents a webhook configuration
@@ -148,6 +149,7 @@ func NewNotifier(webhooks []WebhookConfig) *Notifier {
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+		webhookSem: make(chan struct{}, 20),
 	}
 }
 
@@ -192,7 +194,11 @@ func (n *Notifier) notify(event string, data interface{}, baseURL string) {
 			continue
 		}
 
-		go n.sendWebhook(webhook, event, data, baseURL)
+		n.webhookSem <- struct{}{}
+		go func(wh WebhookConfig) {
+			defer func() { <-n.webhookSem }()
+			n.sendWebhook(wh, event, data, baseURL)
+		}(webhook)
 	}
 }
 
@@ -236,26 +242,40 @@ func (n *Notifier) sendWebhook(webhook WebhookConfig, event string, data interfa
 		return
 	}
 
-	req, err := http.NewRequest("POST", webhook.URL, bytes.NewBuffer(payload))
-	if err != nil {
-		log.Printf("Error creating webhook request: %v", err)
-		return
-	}
+	const maxRetries = 3
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(1<<uint(attempt-1)) * time.Second)
+			log.Printf("Retrying webhook %s (attempt %d/%d)", webhook.Name, attempt+1, maxRetries)
+		}
 
-	req.Header.Set("Content-Type", "application/json")
-	for key, value := range webhook.Headers {
-		req.Header.Set(key, value)
-	}
+		req, err := http.NewRequest("POST", webhook.URL, bytes.NewBuffer(payload))
+		if err != nil {
+			log.Printf("Error creating webhook request: %v", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		for key, value := range webhook.Headers {
+			req.Header.Set(key, value)
+		}
 
-	resp, err := n.client.Do(req)
-	if err != nil {
-		log.Printf("Error sending webhook to %s: %v", webhook.Name, err)
-		return
-	}
-	defer resp.Body.Close()
+		resp, err := n.client.Do(req)
+		if err != nil {
+			if attempt == maxRetries-1 {
+				log.Printf("Webhook %s failed after %d attempts: %v", webhook.Name, maxRetries, err)
+			}
+			continue
+		}
+		defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
-		log.Printf("Webhook %s returned status %d", webhook.Name, resp.StatusCode)
+		if resp.StatusCode >= 500 && attempt < maxRetries-1 {
+			log.Printf("Webhook %s returned %d, retrying", webhook.Name, resp.StatusCode)
+			continue
+		}
+		if resp.StatusCode >= 400 {
+			log.Printf("Webhook %s returned status %d", webhook.Name, resp.StatusCode)
+		}
+		break
 	}
 }
 
