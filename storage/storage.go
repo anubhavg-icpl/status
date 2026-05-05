@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -96,7 +97,7 @@ func NewStorage(dataDir string) (*Storage, error) {
 	}
 
 	// Create data directory if it doesn't exist
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, err
 	}
 
@@ -409,7 +410,10 @@ func (s *Storage) RecordDailyStatus(serviceName string, status DailyStatus) {
 		var history []DailyStatus
 		key := []byte(serviceName)
 		if data := b.Get(key); data != nil {
-			json.Unmarshal(data, &history)
+			if err := json.Unmarshal(data, &history); err != nil {
+				log.Printf("Failed to unmarshal history data: %v", err)
+				return nil
+			}
 		}
 
 		// Check if we already have an entry for today
@@ -450,7 +454,10 @@ func (s *Storage) GetHistory(serviceName string, days int) []DailyStatus {
 		b := tx.Bucket(bucketHistory)
 		data := b.Get([]byte(serviceName))
 		if data != nil {
-			json.Unmarshal(data, &history)
+			if err := json.Unmarshal(data, &history); err != nil {
+				log.Printf("Failed to unmarshal history data: %v", err)
+				return nil
+			}
 		}
 		return nil
 	})
