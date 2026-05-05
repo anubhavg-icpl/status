@@ -41,10 +41,8 @@ LABEL org.opencontainers.image.source="https://github.com/anubhavg-icpl/status"
 LABEL org.opencontainers.image.licenses="MIT"
 
 # Copy binary (distroless includes CA certs and tzdata)
+# Templates are embedded in the binary via //go:embed — no separate copy needed.
 COPY --from=builder /build/status /status
-
-# Copy templates
-COPY --from=builder /build/web/templates /web/templates
 
 # Copy default config
 COPY --from=builder /build/config.yaml /config.yaml

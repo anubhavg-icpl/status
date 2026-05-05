@@ -417,26 +417,34 @@ func (m *Monitor) checkTCP(svc config.Service) {
 
 // checkICMP performs an ICMP ping check
 func (m *Monitor) checkICMP(svc config.Service) {
-	var cmd *exec.Cmd
 	host := svc.Host
 	if host == "" {
 		host = svc.URL
 	}
 
+	ctx, cancel := context.WithTimeout(m.ctx, svc.Timeout)
+	defer cancel()
+
+	var cmd *exec.Cmd
 	start := time.Now()
 
-	// Use appropriate ping command based on OS
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("ping", "-n", "1", "-w", fmt.Sprintf("%d", svc.Timeout.Milliseconds()), host)
+		cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", fmt.Sprintf("%d", svc.Timeout.Milliseconds()), host)
 	} else {
-		cmd = exec.Command("ping", "-c", "1", "-W", fmt.Sprintf("%d", int(svc.Timeout.Seconds())), host)
+		cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", fmt.Sprintf("%d", int(svc.Timeout.Seconds())), host)
 	}
 
 	err := cmd.Run()
 	responseTime := time.Since(start)
 
 	if err != nil {
-		m.updateStatus(svc.Name, StatusDown, responseTime, 0, "ping failed")
+		errStr := err.Error()
+		if strings.Contains(errStr, "executable file not found") ||
+			strings.Contains(errStr, "no such file or directory") {
+			m.updateStatus(svc.Name, StatusDown, 0, 0, "ICMP unavailable: ping not found in container")
+			return
+		}
+		m.updateStatus(svc.Name, StatusDown, responseTime, 0, "ping failed: "+errStr)
 		return
 	}
 

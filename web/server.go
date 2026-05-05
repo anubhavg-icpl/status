@@ -358,13 +358,6 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFS(templateFiles, "templates/index.html")
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		log.Printf("Template error: %v", err)
-		return
-	}
-
 	// Get active incidents
 	incidents := s.storage.GetIncidents(5, true)
 
@@ -394,7 +387,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.Execute(w, data); err != nil {
+	if err := s.indexTmpl.Execute(w, data); err != nil {
 		log.Printf("Template execution error: %v", err)
 	}
 }
@@ -417,13 +410,6 @@ func (s *Server) handleAPIDocs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFS(templateFiles, "templates/api.html")
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		log.Printf("API docs template error: %v", err)
-		return
-	}
-
 	data := struct {
 		Title   string
 		BaseURL string
@@ -435,7 +421,7 @@ func (s *Server) handleAPIDocs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.Execute(w, data); err != nil {
+	if err := s.apiDocsTmpl.Execute(w, data); err != nil {
 		log.Printf("API docs template execution error: %v", err)
 	}
 }
@@ -779,9 +765,25 @@ func (s *Server) handleAPIIncidents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createIncident(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB limit
 	var incident storage.Incident
 	if err := json.NewDecoder(r.Body).Decode(&incident); err != nil {
 		s.jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if incident.Title == "" {
+		s.jsonError(w, "title is required", http.StatusBadRequest)
+		return
+	}
+	validStatuses := map[string]bool{"investigating": true, "identified": true, "monitoring": true, "resolved": true}
+	if !validStatuses[incident.Status] {
+		s.jsonError(w, "status must be one of: investigating, identified, monitoring, resolved", http.StatusBadRequest)
+		return
+	}
+	validSeverities := map[string]bool{"minor": true, "major": true, "critical": true}
+	if !validSeverities[incident.Severity] {
+		s.jsonError(w, "severity must be one of: minor, major, critical", http.StatusBadRequest)
 		return
 	}
 
@@ -819,6 +821,7 @@ func (s *Server) handleAPIIncident(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPut, http.MethodPatch:
 		s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB limit
 			var update struct {
 				Status  string `json:"status"`
 				Message string `json:"message"`
@@ -876,6 +879,7 @@ func (s *Server) handleAPIMaintenance(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB limit
 			var m storage.Maintenance
 			if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
 				s.jsonError(w, "Invalid request body", http.StatusBadRequest)
@@ -913,6 +917,7 @@ func (s *Server) handleAPIMaintenanceItem(w http.ResponseWriter, r *http.Request
 	switch r.Method {
 	case http.MethodPut, http.MethodPatch:
 		s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB limit
 			var update struct {
 				Status string `json:"status"`
 			}
@@ -1070,6 +1075,7 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB limit
 	var sub struct {
 		Email    string   `json:"email"`
 		Services []string `json:"services"`
@@ -1236,7 +1242,10 @@ func (s *Server) recordDailyHistory(ctx context.Context) {
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ok"}`))
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":    "ok",
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
 }
 
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
