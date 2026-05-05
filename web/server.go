@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 	"github.com/status/config"
 	"github.com/status/feeds"
 	"github.com/status/monitor"
@@ -96,12 +97,13 @@ type Server struct {
 	indexTmpl    *template.Template
 	apiDocsTmpl  *template.Template
 	rl           *apiRateLimiter
+	rdb          *redis.Client // nil when Redis disabled
 }
 
 // NewServer creates a new web server instance
 func NewServer(cfg *config.Config, mon *monitor.Monitor, store *storage.Storage, notif *notify.Notifier) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Server{
+	s := &Server{
 		config:   cfg,
 		monitor:  mon,
 		storage:  store,
@@ -120,7 +122,17 @@ func NewServer(cfg *config.Config, mon *monitor.Monitor, store *storage.Storage,
 		cancel:  cancel,
 		rl:      newAPIRateLimiter(cfg.API.RateLimit),
 	}
+	if cfg.Redis.Enabled {
+		rdb := redis.NewClient(&redis.Options{
+			Addr:     cfg.Redis.Addr,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		})
+		s.rdb = rdb
+	}
+	return s
 }
+
 
 // Start starts the web server
 func (s *Server) Start() error {
@@ -206,6 +218,10 @@ func (s *Server) Start() error {
 	// Start broadcasting updates
 	go s.broadcastUpdates(s.ctx)
 
+	if s.rdb != nil {
+		go s.subscribeRedisEvents()
+	}
+
 	// Start daily history recorder
 	go s.recordDailyHistory(s.ctx)
 
@@ -216,7 +232,15 @@ func (s *Server) Start() error {
 // Stop gracefully stops the server
 func (s *Server) Stop(ctx context.Context) error {
 	s.cancel()
-	return s.server.Shutdown(ctx)
+	if err := s.server.Shutdown(ctx); err != nil {
+		return err
+	}
+	if s.rdb != nil {
+		if err := s.rdb.Close(); err != nil {
+			log.Printf("Redis close error: %v", err)
+		}
+	}
+	return nil
 }
 
 // Middleware
@@ -242,6 +266,24 @@ func (s *Server) withMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// rateLimitCheck checks rate limit using Redis when available, falling back to in-memory.
+func (s *Server) rateLimitCheck(ip string) bool {
+	if s.rdb != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		key := "ratelimit:" + ip
+		count, err := s.rdb.Incr(ctx, key).Result()
+		if err == nil {
+			if count == 1 {
+				s.rdb.Expire(ctx, key, time.Minute)
+			}
+			return count <= int64(s.config.API.RateLimit)
+		}
+		// Redis error — fall through to in-memory
+	}
+	return s.rl.allow(ip)
+}
+
 // withRateLimit wraps a handler with per-IP fixed-window rate limiting.
 func (s *Server) withRateLimit(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +291,7 @@ func (s *Server) withRateLimit(next http.HandlerFunc) http.HandlerFunc {
 		if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
 			ip = ip[:colonIdx]
 		}
-		if !s.rl.allow(ip) {
+		if !s.rateLimitCheck(ip) {
 			s.jsonError(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
@@ -798,6 +840,7 @@ func (s *Server) createIncident(w http.ResponseWriter, r *http.Request) {
 	if s.notifier != nil {
 		s.notifier.NotifyIncidentCreated(*created, s.config.BaseURL)
 	}
+	s.publishEvent("incident.created", created)
 
 	w.WriteHeader(http.StatusCreated)
 	s.jsonResponse(w, created)
@@ -846,8 +889,10 @@ func (s *Server) handleAPIIncident(w http.ResponseWriter, r *http.Request) {
 			if s.notifier != nil {
 				if update.Status == "resolved" {
 					s.notifier.NotifyIncidentResolved(*updated, s.config.BaseURL)
+					s.publishEvent("incident.resolved", updated)
 				} else {
 					s.notifier.NotifyIncidentUpdated(*updated, s.config.BaseURL)
+					s.publishEvent("incident.updated", updated)
 				}
 			}
 
@@ -897,6 +942,7 @@ func (s *Server) handleAPIMaintenance(w http.ResponseWriter, r *http.Request) {
 			if s.notifier != nil {
 				s.notifier.NotifyMaintenanceScheduled(*created, s.config.BaseURL)
 			}
+			s.publishEvent("maintenance.created", created)
 
 			w.WriteHeader(http.StatusCreated)
 			s.jsonResponse(w, created)
@@ -1167,6 +1213,43 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
+}
+
+// publishEvent publishes an event to Redis pub/sub for cross-pod broadcasting.
+func (s *Server) publishEvent(eventType string, payload interface{}) {
+	if s.rdb == nil {
+		return
+	}
+	data, err := json.Marshal(map[string]interface{}{
+		"type":    eventType,
+		"payload": payload,
+	})
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	if err := s.rdb.Publish(ctx, "status:events", data).Err(); err != nil {
+		log.Printf("Redis publish error: %v", err)
+	}
+}
+
+// subscribeRedisEvents subscribes to Redis pub/sub and fans out events to WebSocket clients.
+func (s *Server) subscribeRedisEvents() {
+	pubsub := s.rdb.Subscribe(context.Background(), "status:events")
+	defer pubsub.Close()
+	for msg := range pubsub.Channel() {
+		s.clientMu.RLock()
+		for client := range s.clients {
+			if err := client.WriteJSON(map[string]interface{}{
+				"type":    "event",
+				"payload": json.RawMessage(msg.Payload),
+			}); err != nil {
+				client.Close()
+			}
+		}
+		s.clientMu.RUnlock()
+	}
 }
 
 func (s *Server) broadcastUpdates(ctx context.Context) {

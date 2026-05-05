@@ -21,6 +21,7 @@ type Config struct {
 	Webhooks    []WebhookConfig `yaml:"webhooks"`
 	Storage     StorageConfig   `yaml:"storage"`
 	API         APIConfig       `yaml:"api"`
+	Redis       RedisConfig     `yaml:"redis"`
 }
 
 // StorageConfig holds storage settings
@@ -36,6 +37,14 @@ type APIConfig struct {
 	BasicAuth    BasicAuth `yaml:"basic_auth"`   // Basic auth
 	AllowedIPs   []string `yaml:"allowed_ips"`   // IP whitelist
 	RateLimit    int      `yaml:"rate_limit"`
+}
+
+// RedisConfig holds optional Redis settings for multi-replica support
+type RedisConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Addr     string `yaml:"addr"`
+	Password string `yaml:"password"`
+	DB       int    `yaml:"db"`
 }
 
 // BasicAuth holds basic auth credentials
@@ -174,6 +183,10 @@ func DefaultConfig() *Config {
 		API: APIConfig{
 			Enabled:   true,
 			RateLimit: 100,
+		},
+		Redis: RedisConfig{
+			Addr: "localhost:6379",
+			DB:   0,
 		},
 		Services: []Service{},
 		Webhooks: []WebhookConfig{},

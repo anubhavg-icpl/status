@@ -402,9 +402,9 @@ func (m *Monitor) checkTCP(svc config.Service) {
 	var status Status
 	var errMsg string
 
-	if responseTime < 1*time.Second {
+	if responseTime < 2*time.Second {
 		status = StatusOperational
-	} else if responseTime < 3*time.Second {
+	} else if responseTime < 5*time.Second {
 		status = StatusDegraded
 		errMsg = "slow connection"
 	} else {
@@ -451,9 +451,9 @@ func (m *Monitor) checkICMP(svc config.Service) {
 	var status Status
 	var errMsg string
 
-	if responseTime < 100*time.Millisecond {
+	if responseTime < 300*time.Millisecond {
 		status = StatusOperational
-	} else if responseTime < 500*time.Millisecond {
+	} else if responseTime < 1000*time.Millisecond {
 		status = StatusDegraded
 		errMsg = "high latency"
 	} else {
@@ -512,9 +512,9 @@ func (m *Monitor) checkDNS(svc config.Service) {
 	var status Status
 	var errMsg string
 
-	if responseTime < 100*time.Millisecond {
+	if responseTime < 300*time.Millisecond {
 		status = StatusOperational
-	} else if responseTime < 500*time.Millisecond {
+	} else if responseTime < 1000*time.Millisecond {
 		status = StatusDegraded
 		errMsg = "slow DNS resolution"
 	} else {
@@ -602,7 +602,23 @@ func (m *Monitor) checkUDP(svc config.Service) {
 	// Send payload if configured, otherwise send a simple probe
 	payload := []byte(svc.UDPPayload)
 	if len(payload) == 0 {
-		payload = []byte{0x00} // Minimal probe packet
+		if svc.Port == 53 {
+			// Minimal valid DNS query for root "." A record IN
+			// A proper query that DNS servers will actually respond to
+			payload = []byte{
+				0x12, 0x34, // Transaction ID
+				0x01, 0x00, // Flags: standard query, recursion desired
+				0x00, 0x01, // QDCOUNT: 1 question
+				0x00, 0x00, // ANCOUNT: 0
+				0x00, 0x00, // NSCOUNT: 0
+				0x00, 0x00, // ARCOUNT: 0
+				0x00,       // Root domain (empty label = ".")
+				0x00, 0x01, // QTYPE: A
+				0x00, 0x01, // QCLASS: IN
+			}
+		} else {
+			payload = []byte{0x00} // Minimal probe for other UDP services
+		}
 	}
 
 	_, err = conn.Write(payload)
@@ -782,7 +798,7 @@ func (m *Monitor) checkQUIC(svc config.Service) {
 			// Some QUIC servers may not respond to invalid initial packets
 			// but if UDP is open, consider it potentially operational
 			status = StatusDegraded
-			errMsg = "QUIC probe timeout (port may be open)"
+			errMsg = "QUIC timeout — server did not respond to probe packet"
 		} else {
 			status = StatusDown
 			errMsg = err.Error()
@@ -977,7 +993,7 @@ func (m *Monitor) checkSSH(svc config.Service) {
 
 	// SSH banner should start with SSH-
 	if strings.HasPrefix(banner, "SSH-") {
-		if responseTime < 500*time.Millisecond {
+		if responseTime < 1500*time.Millisecond {
 			status = StatusOperational
 		} else {
 			status = StatusDegraded
@@ -1249,11 +1265,14 @@ func (m *Monitor) checkNTP(svc config.Service) {
 		status = StatusDown
 		errMsg = "NTP read failed"
 	} else if buf[0]&0x07 == 4 { // Mode 4 = server
-		if responseTime < 200*time.Millisecond {
+		if responseTime < 500*time.Millisecond {
 			status = StatusOperational
-		} else {
+		} else if responseTime < 2*time.Second {
 			status = StatusDegraded
 			errMsg = "slow NTP response"
+		} else {
+			status = StatusDegraded
+			errMsg = "very slow NTP response"
 		}
 	} else {
 		status = StatusDown
