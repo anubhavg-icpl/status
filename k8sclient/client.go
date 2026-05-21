@@ -35,6 +35,7 @@ type Client struct {
 	PVCs         corev1listers.PersistentVolumeClaimLister
 	Events       corev1listers.EventLister
 	Namespaces   corev1listers.NamespaceLister
+	Services     corev1listers.ServiceLister
 	Deployments  appsv1listers.DeploymentLister
 	StatefulSets appsv1listers.StatefulSetLister
 	DaemonSets   appsv1listers.DaemonSetLister
@@ -73,6 +74,7 @@ func New(ctx context.Context, resync time.Duration) (*Client, error) {
 		PVCs:         f.Core().V1().PersistentVolumeClaims().Lister(),
 		Events:       f.Core().V1().Events().Lister(),
 		Namespaces:   f.Core().V1().Namespaces().Lister(),
+		Services:     f.Core().V1().Services().Lister(),
 		Deployments:  f.Apps().V1().Deployments().Lister(),
 		StatefulSets: f.Apps().V1().StatefulSets().Lister(),
 		DaemonSets:   f.Apps().V1().DaemonSets().Lister(),
@@ -86,6 +88,7 @@ func New(ctx context.Context, resync time.Duration) (*Client, error) {
 	_ = f.Core().V1().PersistentVolumeClaims().Informer()
 	_ = f.Core().V1().Events().Informer()
 	_ = f.Core().V1().Namespaces().Informer()
+	_ = f.Core().V1().Services().Informer()
 	_ = f.Apps().V1().Deployments().Informer()
 	_ = f.Apps().V1().StatefulSets().Informer()
 	_ = f.Apps().V1().DaemonSets().Informer()

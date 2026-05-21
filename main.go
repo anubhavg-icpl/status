@@ -146,21 +146,51 @@ func main() {
 	notifier := notify.NewNotifier(webhookConfigs)
 	log.Printf("Webhooks configured: %d", len(webhookConfigs))
 
-	// Create monitor with storage for persistence
-	mon := monitor.NewMonitor(cfg.Services, store)
-
-	// Initialize k8s client + informers when any k8s_* probe is configured.
-	if needsK8s(cfg.Services) {
-		log.Println("k8s probes detected — initializing in-cluster client + informers")
+	// Initialize k8s client + informers when any k8s_* probe is configured OR
+	// when auto-discovery is requested. Auto-discovery is enabled by default
+	// once the in-cluster client is reachable; disable via env STATUS_DISABLE_AUTODISCOVERY=1.
+	var kc *k8sclient.Client
+	wantK8s := needsK8s(cfg.Services) || os.Getenv("STATUS_DISABLE_AUTODISCOVERY") != "1"
+	if wantK8s {
+		log.Println("initializing in-cluster k8s client + informers")
 		kctx, kcancel := context.WithCancel(context.Background())
 		_ = kcancel // kept alive for the process lifetime
-		kc, err := k8sclient.New(kctx, 10*time.Minute)
+		c, err := k8sclient.New(kctx, 10*time.Minute)
 		if err != nil {
-			log.Printf("k8s client init failed: %v (k8s_* probes will report down)", err)
+			log.Printf("k8s client init failed: %v (k8s_* probes + auto-discovery disabled)", err)
 		} else {
-			mon.SetK8sClient(kc)
+			kc = c
 			log.Println("k8s informers synced")
 		}
+	}
+
+	// Auto-discover services annotated with status.invinsense.dev/probe.
+	if kc != nil && os.Getenv("STATUS_DISABLE_AUTODISCOVERY") != "1" {
+		discovered, err := kc.DiscoverServices()
+		if err != nil {
+			log.Printf("auto-discovery failed: %v", err)
+		} else if len(discovered) > 0 {
+			// config.yaml entries win on name collision.
+			seen := map[string]bool{}
+			for _, s := range cfg.Services {
+				seen[s.Name] = true
+			}
+			added := 0
+			for _, s := range discovered {
+				if seen[s.Name] {
+					continue
+				}
+				cfg.Services = append(cfg.Services, s)
+				added++
+			}
+			log.Printf("auto-discovered %d additional services from annotations", added)
+		}
+	}
+
+	// Create monitor with storage for persistence
+	mon := monitor.NewMonitor(cfg.Services, store)
+	if kc != nil {
+		mon.SetK8sClient(kc)
 	}
 
 	// Start monitoring
