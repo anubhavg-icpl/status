@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: status
-          image: harbor.invinsense.dev/infra/status:f47d3f2-k8s
+          image: harbor.invinsense.dev/infra/status:5205e00-autodisc
           imagePullPolicy: IfNotPresent
           args: ["-config", "/config.yaml"]
           ports:
