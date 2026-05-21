@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/status/config"
+	"github.com/status/k8sclient"
 	"github.com/status/storage"
 )
 
@@ -64,6 +65,13 @@ type Monitor struct {
 	cancel      context.CancelFunc
 	maxHistory  int
 	storage     *storage.Storage
+	k8s         *k8sclient.Client
+}
+
+// SetK8sClient injects the k8s client used by k8s_* probes.
+// Must be called before Start() if any k8s_* services are configured.
+func (m *Monitor) SetK8sClient(c *k8sclient.Client) {
+	m.k8s = c
 }
 
 // NewMonitor creates a new monitor instance
@@ -308,6 +316,11 @@ func (m *Monitor) checkService(svc config.Service) {
 		m.checkMySQL(svc)
 	case config.CheckPostgres:
 		m.checkPostgres(svc)
+	case config.CheckK8sAPIServer, config.CheckK8sAPILatency, config.CheckK8sNodes,
+		config.CheckK8sDeployment, config.CheckK8sStatefulSet, config.CheckK8sDaemonSet,
+		config.CheckK8sPodsCrash, config.CheckK8sPVC, config.CheckK8sEvents,
+		config.CheckK8sHPA, config.CheckK8sCronJob:
+		m.k8sCheck(svc)
 	default:
 		m.checkHTTP(svc) // Default to HTTP
 	}

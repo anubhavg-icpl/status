@@ -103,6 +103,19 @@ const (
 	CheckMongoDB   CheckType = "mongodb"
 	CheckMySQL     CheckType = "mysql"
 	CheckPostgres  CheckType = "postgres"
+
+	// Kubernetes cluster probes (require in-cluster RBAC).
+	CheckK8sAPIServer   CheckType = "k8s_apiserver"   // /livez or /readyz
+	CheckK8sAPILatency  CheckType = "k8s_api_latency" // LIST /namespaces timing
+	CheckK8sNodes       CheckType = "k8s_nodes"       // aggregate Ready ratio
+	CheckK8sDeployment  CheckType = "k8s_deployment"  // readyReplicas vs spec
+	CheckK8sStatefulSet CheckType = "k8s_statefulset"
+	CheckK8sDaemonSet   CheckType = "k8s_daemonset"
+	CheckK8sPodsCrash   CheckType = "k8s_pods_crash"  // CrashLoop count in ns
+	CheckK8sPVC         CheckType = "k8s_pvc"         // PVC bound state
+	CheckK8sEvents      CheckType = "k8s_events"      // Warning event rate
+	CheckK8sHPA         CheckType = "k8s_hpa"         // HPA current vs desired
+	CheckK8sCronJob     CheckType = "k8s_cronjob"     // last success age
 )
 
 // Service represents a monitored service
@@ -141,6 +154,16 @@ type Service struct {
 	// Auth (Redis/MongoDB/etc.)
 	Username       string            `yaml:"username"`
 	Password       string            `yaml:"password"`
+
+	// Kubernetes probe selectors
+	K8sNamespace     string  `yaml:"k8s_namespace"`      // target namespace
+	K8sName          string  `yaml:"k8s_name"`           // resource name (e.g. deployment)
+	K8sLabelSelector string  `yaml:"k8s_label_selector"` // optional label filter
+	K8sPath          string  `yaml:"k8s_path"`           // /livez or /readyz for apiserver
+	K8sReadyPct      float64 `yaml:"k8s_ready_pct"`      // node Ready threshold (default 90)
+	K8sCrashThresh   int     `yaml:"k8s_crash_thresh"`   // pod crashloop count threshold
+	K8sWarnPerMin    float64 `yaml:"k8s_warn_per_min"`   // events warning rate
+	K8sMaxAge        string  `yaml:"k8s_max_age"`        // cronjob last-success max age (duration)
 }
 
 // Incident represents a past or ongoing incident

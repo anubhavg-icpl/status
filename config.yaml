@@ -396,3 +396,154 @@ services:
     timeout: 10s
     tls_warn_days: 30
     description: "harbor.invinsense.dev cert expiry"
+
+  # =========================== Kubernetes Cluster ==========================
+  - name: "API Server (/livez)"
+    type: k8s_apiserver
+    group: "Kubernetes"
+    k8s_path: "/livez"
+    interval: 30s
+    timeout: 10s
+    description: "kube-apiserver liveness"
+
+  - name: "API Server (/readyz)"
+    type: k8s_apiserver
+    group: "Kubernetes"
+    k8s_path: "/readyz"
+    interval: 30s
+    timeout: 10s
+    description: "kube-apiserver readiness (incl. etcd)"
+
+  - name: "API Server Latency"
+    type: k8s_api_latency
+    group: "Kubernetes"
+    interval: 30s
+    timeout: 10s
+    description: "LIST /namespaces?limit=1 round-trip"
+
+  - name: "Cluster Nodes"
+    type: k8s_nodes
+    group: "Kubernetes"
+    k8s_ready_pct: 90
+    interval: 30s
+    description: "Aggregate node Ready / pressure status"
+
+  - name: "Cluster Warning Events"
+    type: k8s_events
+    group: "Kubernetes"
+    k8s_warn_per_min: 2
+    interval: 60s
+    description: "Warning events last 15m, all namespaces"
+
+  - name: "CrashLoop Pods (invinsense)"
+    type: k8s_pods_crash
+    group: "Kubernetes"
+    k8s_namespace: "invinsense"
+    k8s_crash_thresh: 1
+    interval: 60s
+    description: "Pods stuck in CrashLoopBackOff / ImagePullBackOff"
+
+  - name: "PVCs (invinsense)"
+    type: k8s_pvc
+    group: "Kubernetes"
+    k8s_namespace: "invinsense"
+    interval: 60s
+    description: "PVC bound state"
+
+  # --- Workload health (key deployments) ---
+  - name: "Workload: invinsense-api"
+    type: k8s_deployment
+    group: "Kubernetes Workloads"
+    k8s_namespace: "invinsense"
+    k8s_name: "invinsense-api"
+    interval: 30s
+    description: "Deployment readyReplicas vs spec"
+
+  - name: "Workload: invinsense-web"
+    type: k8s_deployment
+    group: "Kubernetes Workloads"
+    k8s_namespace: "invinsense"
+    k8s_name: "invinsense-web"
+    interval: 30s
+    description: "Deployment readyReplicas vs spec"
+
+  - name: "Workload: invinsense-clickstack"
+    type: k8s_deployment
+    group: "Kubernetes Workloads"
+    k8s_namespace: "invinsense"
+    k8s_name: "invinsense-clickstack"
+    interval: 30s
+    description: "Deployment readyReplicas vs spec"
+
+  - name: "Workload: invinsense-otel-collector"
+    type: k8s_deployment
+    group: "Kubernetes Workloads"
+    k8s_namespace: "invinsense"
+    k8s_name: "invinsense-otel-collector"
+    interval: 30s
+    description: "Deployment readyReplicas vs spec"
+
+  - name: "Workload: invinsense-postgresqlha-pgpool"
+    type: k8s_deployment
+    group: "Kubernetes Workloads"
+    k8s_namespace: "invinsense"
+    k8s_name: "invinsense-postgresqlha-pgpool"
+    interval: 30s
+    description: "Deployment readyReplicas vs spec"
+
+  - name: "Workload: harbor-core"
+    type: k8s_deployment
+    group: "Kubernetes Workloads"
+    k8s_namespace: "invinsense"
+    k8s_name: "harbor-core"
+    interval: 30s
+    description: "Deployment readyReplicas vs spec"
+
+  - name: "Workload: status (self)"
+    type: k8s_deployment
+    group: "Kubernetes Workloads"
+    k8s_namespace: "invinsense"
+    k8s_name: "status"
+    interval: 60s
+    description: "Self deployment health"
+
+  # --- StatefulSets ---
+  - name: "STS: invinsense-mongo"
+    type: k8s_statefulset
+    group: "Kubernetes Workloads"
+    k8s_namespace: "invinsense"
+    k8s_name: "invinsense-mongo"
+    interval: 30s
+    description: "MongoDB StatefulSet"
+
+  - name: "STS: invinsense-nats"
+    type: k8s_statefulset
+    group: "Kubernetes Workloads"
+    k8s_namespace: "invinsense"
+    k8s_name: "invinsense-nats"
+    interval: 30s
+    description: "NATS StatefulSet"
+
+  - name: "STS: invinsense-uec-redis"
+    type: k8s_statefulset
+    group: "Kubernetes Workloads"
+    k8s_namespace: "invinsense"
+    k8s_name: "invinsense-uec-redis"
+    interval: 30s
+    description: "Redis cluster StatefulSet"
+
+  - name: "STS: invinsense-postgresqlha-postgresql"
+    type: k8s_statefulset
+    group: "Kubernetes Workloads"
+    k8s_namespace: "invinsense"
+    k8s_name: "invinsense-postgresqlha-postgresql"
+    interval: 30s
+    description: "PostgreSQL HA StatefulSet"
+
+  - name: "STS: invinsense-clickhouse"
+    type: k8s_statefulset
+    group: "Kubernetes Workloads"
+    k8s_namespace: "invinsense"
+    k8s_name: "invinsense-clickhouse"
+    interval: 30s
+    description: "ClickHouse StatefulSet"

@@ -10,11 +10,26 @@ import (
 	"time"
 
 	"github.com/status/config"
+	"github.com/status/k8sclient"
 	"github.com/status/monitor"
 	"github.com/status/notify"
 	"github.com/status/storage"
 	"github.com/status/web"
 )
+
+// needsK8s reports whether any service uses a k8s_* check type.
+func needsK8s(svcs []config.Service) bool {
+	for _, s := range svcs {
+		switch s.Type {
+		case config.CheckK8sAPIServer, config.CheckK8sAPILatency, config.CheckK8sNodes,
+			config.CheckK8sDeployment, config.CheckK8sStatefulSet, config.CheckK8sDaemonSet,
+			config.CheckK8sPodsCrash, config.CheckK8sPVC, config.CheckK8sEvents,
+			config.CheckK8sHPA, config.CheckK8sCronJob:
+			return true
+		}
+	}
+	return false
+}
 
 func main() {
 	// Parse command line flags
@@ -133,6 +148,20 @@ func main() {
 
 	// Create monitor with storage for persistence
 	mon := monitor.NewMonitor(cfg.Services, store)
+
+	// Initialize k8s client + informers when any k8s_* probe is configured.
+	if needsK8s(cfg.Services) {
+		log.Println("k8s probes detected — initializing in-cluster client + informers")
+		kctx, kcancel := context.WithCancel(context.Background())
+		_ = kcancel // kept alive for the process lifetime
+		kc, err := k8sclient.New(kctx, 10*time.Minute)
+		if err != nil {
+			log.Printf("k8s client init failed: %v (k8s_* probes will report down)", err)
+		} else {
+			mon.SetK8sClient(kc)
+			log.Println("k8s informers synced")
+		}
+	}
 
 	// Start monitoring
 	log.Printf("Starting health monitors for %d services...", len(cfg.Services))
