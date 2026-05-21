@@ -66,6 +66,8 @@ type Monitor struct {
 	maxHistory  int
 	storage     *storage.Storage
 	k8s         *k8sclient.Client
+	// dynamic registration — protected by mu
+	cancelFns map[string]context.CancelFunc
 }
 
 // SetK8sClient injects the k8s client used by k8s_* probes.
@@ -106,6 +108,7 @@ func NewMonitor(services []config.Service, store *storage.Storage) *Monitor {
 		cancel:     cancel,
 		maxHistory: 90, // Keep 90 data points (e.g., 90 checks)
 		storage:    store,
+		cancelFns:  make(map[string]context.CancelFunc),
 	}
 
 	// Load persisted check history if available
@@ -158,8 +161,57 @@ func NewMonitor(services []config.Service, store *storage.Storage) *Monitor {
 // Start begins monitoring all services
 func (m *Monitor) Start() {
 	for _, svc := range m.services {
-		go m.monitorService(svc)
+		sctx, cancel := context.WithCancel(m.ctx)
+		m.mu.Lock()
+		m.cancelFns[svc.Name] = cancel
+		m.mu.Unlock()
+		go m.monitorService(sctx, svc)
 	}
+}
+
+// AddService registers and starts probing a new service at runtime.
+// Returns false if a service with the same name is already registered.
+func (m *Monitor) AddService(svc config.Service) bool {
+	m.mu.Lock()
+	if _, exists := m.statuses[svc.Name]; exists {
+		m.mu.Unlock()
+		return false
+	}
+	m.statuses[svc.Name] = &ServiceStatus{
+		Name:        svc.Name,
+		Group:       svc.Group,
+		URL:         svc.URL,
+		Description: svc.Description,
+		Status:      StatusUnknown,
+		Uptime:      100.0,
+		History:     make([]HistoryPoint, 0, m.maxHistory),
+	}
+	m.services = append(m.services, svc)
+	sctx, cancel := context.WithCancel(m.ctx)
+	m.cancelFns[svc.Name] = cancel
+	m.mu.Unlock()
+	go m.monitorService(sctx, svc)
+	return true
+}
+
+// RemoveService stops the probe goroutine and removes the service.
+func (m *Monitor) RemoveService(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cancel, ok := m.cancelFns[name]
+	if !ok {
+		return false
+	}
+	cancel()
+	delete(m.cancelFns, name)
+	delete(m.statuses, name)
+	for i, s := range m.services {
+		if s.Name == name {
+			m.services = append(m.services[:i], m.services[i+1:]...)
+			break
+		}
+	}
+	return true
 }
 
 // Stop stops all monitoring goroutines
@@ -256,7 +308,7 @@ func (m *Monitor) GetOverallStatus() Status {
 }
 
 // monitorService continuously checks a single service
-func (m *Monitor) monitorService(svc config.Service) {
+func (m *Monitor) monitorService(ctx context.Context, svc config.Service) {
 	// Initial check
 	m.checkService(svc)
 
@@ -265,7 +317,7 @@ func (m *Monitor) monitorService(svc config.Service) {
 
 	for {
 		select {
-		case <-m.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			m.checkService(svc)

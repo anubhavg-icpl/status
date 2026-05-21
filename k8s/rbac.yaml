@@ -17,6 +17,9 @@ rules:
       - persistentvolumeclaims
       - persistentvolumes
     verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get] # narrow: read referenced auth secrets only on demand
   - apiGroups: ["apps"]
     resources: [deployments, statefulsets, daemonsets, replicasets]
     verbs: [get, list, watch]

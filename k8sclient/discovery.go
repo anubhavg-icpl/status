@@ -1,7 +1,9 @@
 package k8sclient
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -9,7 +11,9 @@ import (
 	"github.com/status/config"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/tools/cache"
 )
 
 // Annotation keys recognized on a Service to opt into auto-discovery.
@@ -30,19 +34,27 @@ import (
 //	    status.invinsense.dev/description:     "what it does"
 //	    status.invinsense.dev/password-ref:    "secret-name/key"  # redis/mongo auth
 const (
-	annPrefix     = "status.invinsense.dev/"
-	annProbe      = annPrefix + "probe"
-	annType       = annPrefix + "type"
-	annPath       = annPrefix + "path"
-	annPort       = annPrefix + "port"
-	annGroup      = annPrefix + "group"
-	annInterval   = annPrefix + "interval"
-	annTimeout    = annPrefix + "timeout"
-	annExpected   = annPrefix + "expected-status"
-	annName       = annPrefix + "name"
-	annDesc       = annPrefix + "description"
-	annPasswordRf = annPrefix + "password-ref"
+	annPrefix      = "status.invinsense.dev/"
+	annProbe       = annPrefix + "probe"
+	annType        = annPrefix + "type"
+	annPath        = annPrefix + "path"
+	annPort        = annPrefix + "port"
+	annGroup       = annPrefix + "group"
+	annInterval    = annPrefix + "interval"
+	annTimeout     = annPrefix + "timeout"
+	annExpected    = annPrefix + "expected-status"
+	annName        = annPrefix + "name"
+	annDesc        = annPrefix + "description"
+	annPasswordRef = annPrefix + "password-secret" // ns/secret-name#key  or  secret-name#key
+	annUsername    = annPrefix + "username"
 )
+
+// Reconciler is the minimal Monitor surface auto-discovery needs to drive
+// hot-reload. It is implemented by *monitor.Monitor in the parent package.
+type Reconciler interface {
+	AddService(config.Service) bool
+	RemoveService(string) bool
+}
 
 // DiscoverServices scans every Service in cache and returns generated probes
 // for those carrying `status.invinsense.dev/probe: true`. Headless services
@@ -72,11 +84,142 @@ func (c *Client) DiscoverServices() ([]config.Service, error) {
 			continue // headless
 		}
 		svc := buildProbe(s)
-		if svc.Name != "" {
-			out = append(out, svc)
+		if svc.Name == "" {
+			continue
 		}
+		// Resolve password-secret annotation (best-effort; logged on failure).
+		if ref := ann[annPasswordRef]; ref != "" {
+			if pw, err := c.resolveSecretRef(s.Namespace, ref); err != nil {
+				log.Printf("autodisc: %s/%s password-secret %q failed: %v", s.Namespace, s.Name, ref, err)
+			} else {
+				svc.Password = pw
+			}
+		}
+		out = append(out, svc)
 	}
 	return out, nil
+}
+
+// resolveSecretRef parses "ns/name#key" or "name#key" (ns defaults to svcNs)
+// and returns the secret value. Uses the cluster clientset directly because
+// Secrets are not in the informer factory (keeps RBAC narrower).
+func (c *Client) resolveSecretRef(svcNs, ref string) (string, error) {
+	ns, rest, ok := strings.Cut(ref, "/")
+	if !ok {
+		rest = ref
+		ns = svcNs
+	}
+	name, key, ok := strings.Cut(rest, "#")
+	if !ok {
+		return "", fmt.Errorf("ref must be [ns/]name#key, got %q", ref)
+	}
+	sec, err := c.Clientset.CoreV1().Secrets(ns).Get(
+		context.Background(), name, metav1.GetOptions{},
+	)
+	if err != nil {
+		return "", err
+	}
+	v, ok := sec.Data[key]
+	if !ok {
+		return "", fmt.Errorf("key %q not in secret %s/%s", key, ns, name)
+	}
+	return string(v), nil
+}
+
+// WatchServices wires Service add/update/delete handlers so probes
+// register and deregister at runtime without a pod restart.
+// reservedNames is the set of svc names defined in config.yaml — those
+// are never auto-added (config wins).
+func (c *Client) WatchServices(ctx context.Context, rec Reconciler, reservedNames map[string]bool) error {
+	if c == nil || c.Factory == nil {
+		return fmt.Errorf("k8s client not initialized")
+	}
+	inf := c.Factory.Core().V1().Services().Informer()
+	_, err := inf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			s, ok := obj.(*corev1.Service)
+			if !ok {
+				return
+			}
+			c.reconcileOne(s, "", rec, reservedNames)
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldS, _ := oldObj.(*corev1.Service)
+			newS, _ := newObj.(*corev1.Service)
+			if newS == nil {
+				return
+			}
+			prevName := ""
+			if oldS != nil {
+				prevName = probeName(oldS)
+			}
+			c.reconcileOne(newS, prevName, rec, reservedNames)
+		},
+		DeleteFunc: func(obj interface{}) {
+			s, ok := obj.(*corev1.Service)
+			if !ok {
+				// Tombstone case
+				if t, isT := obj.(cache.DeletedFinalStateUnknown); isT {
+					s, _ = t.Obj.(*corev1.Service)
+				}
+			}
+			if s == nil {
+				return
+			}
+			name := probeName(s)
+			if name != "" && !reservedNames[name] {
+				if rec.RemoveService(name) {
+					log.Printf("autodisc: removed %q (svc %s/%s deleted)", name, s.Namespace, s.Name)
+				}
+			}
+		},
+	})
+	return err
+}
+
+func (c *Client) reconcileOne(s *corev1.Service, prevName string, rec Reconciler, reserved map[string]bool) {
+	if s == nil {
+		return
+	}
+	currentName := probeName(s)
+
+	// If name changed (annotation flipped), drop the old probe.
+	if prevName != "" && prevName != currentName {
+		if !reserved[prevName] {
+			rec.RemoveService(prevName)
+		}
+	}
+
+	enabled := s.Annotations != nil && truthy(s.Annotations[annProbe])
+	if !enabled || s.Spec.ClusterIP == corev1.ClusterIPNone {
+		// probe annotation removed → drop probe
+		if currentName != "" && !reserved[currentName] {
+			rec.RemoveService(currentName)
+		}
+		return
+	}
+	svc := buildProbe(s)
+	if svc.Name == "" {
+		return
+	}
+	if reserved[svc.Name] {
+		return // config.yaml wins
+	}
+	// Replace strategy: remove + add so updates pick up new fields.
+	rec.RemoveService(svc.Name)
+	if rec.AddService(svc) {
+		log.Printf("autodisc: registered %q (svc %s/%s, type=%s)", svc.Name, s.Namespace, s.Name, svc.Type)
+	}
+}
+
+func probeName(s *corev1.Service) string {
+	if s == nil || s.Annotations == nil {
+		return ""
+	}
+	if n := s.Annotations[annName]; n != "" {
+		return n
+	}
+	return fmt.Sprintf("%s/%s", s.Namespace, s.Name)
 }
 
 func buildProbe(s *corev1.Service) config.Service {
@@ -131,6 +274,7 @@ func buildProbe(s *corev1.Service) config.Service {
 			port = 6379
 		}
 		svc.Port = port
+		svc.Username = ann[annUsername]
 	case "mongodb", "mongo":
 		svc.Type = config.CheckMongoDB
 		svc.Host = host
@@ -138,6 +282,7 @@ func buildProbe(s *corev1.Service) config.Service {
 			port = 27017
 		}
 		svc.Port = port
+		svc.Username = ann[annUsername]
 	case "postgres", "postgresql":
 		svc.Type = config.CheckPostgres
 		svc.Host = host
@@ -145,6 +290,7 @@ func buildProbe(s *corev1.Service) config.Service {
 			port = 5432
 		}
 		svc.Port = port
+		svc.Username = ann[annUsername]
 	case "mysql":
 		svc.Type = config.CheckMySQL
 		svc.Host = host
@@ -152,6 +298,7 @@ func buildProbe(s *corev1.Service) config.Service {
 			port = 3306
 		}
 		svc.Port = port
+		svc.Username = ann[annUsername]
 	case "tls":
 		svc.Type = config.CheckTLS
 		svc.Host = host

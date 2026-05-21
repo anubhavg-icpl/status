@@ -184,6 +184,9 @@ func (s *Server) Start() error {
 	// Metrics API
 	mux.HandleFunc("/api/metrics", s.withRateLimit(s.handleAPIMetrics))
 
+	// Prometheus scrape endpoint (no rate-limit — kube-prom will probe this)
+	mux.HandleFunc("/metrics", s.handlePrometheus)
+
 	// === Subscription Routes (rate limited) ===
 	mux.HandleFunc("/api/subscribe", s.withRateLimit(s.handleSubscribe))
 

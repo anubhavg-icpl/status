@@ -164,20 +164,23 @@ func main() {
 		}
 	}
 
+	// Reserved names = svcs defined in config.yaml. Auto-discovery never
+	// overrides these and the hot-reload watcher ignores annotation edits on
+	// services that happen to share a name with a yaml entry.
+	reserved := map[string]bool{}
+	for _, s := range cfg.Services {
+		reserved[s.Name] = true
+	}
+
 	// Auto-discover services annotated with status.invinsense.dev/probe.
 	if kc != nil && os.Getenv("STATUS_DISABLE_AUTODISCOVERY") != "1" {
 		discovered, err := kc.DiscoverServices()
 		if err != nil {
 			log.Printf("auto-discovery failed: %v", err)
-		} else if len(discovered) > 0 {
-			// config.yaml entries win on name collision.
-			seen := map[string]bool{}
-			for _, s := range cfg.Services {
-				seen[s.Name] = true
-			}
+		} else {
 			added := 0
 			for _, s := range discovered {
-				if seen[s.Name] {
+				if reserved[s.Name] {
 					continue
 				}
 				cfg.Services = append(cfg.Services, s)
@@ -196,6 +199,15 @@ func main() {
 	// Start monitoring
 	log.Printf("Starting health monitors for %d services...", len(cfg.Services))
 	mon.Start()
+
+	// Hot-reload: watch Service add/update/delete so probes appear in seconds.
+	if kc != nil && os.Getenv("STATUS_DISABLE_AUTODISCOVERY") != "1" {
+		if err := kc.WatchServices(context.Background(), mon, reserved); err != nil {
+			log.Printf("autodisc watcher failed to install: %v", err)
+		} else {
+			log.Println("autodisc watcher installed — annotations take effect at runtime")
+		}
+	}
 
 	// Create and start web server
 	server := web.NewServer(cfg, mon, store, notifier)
