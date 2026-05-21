@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: status
-          image: harbor.invinsense.dev/infra/status:f47d3f2-r1
+          image: harbor.invinsense.dev/infra/status:f47d3f2-k8s
           imagePullPolicy: IfNotPresent
           args: ["-config", "/config.yaml"]
           ports:
@@ -57,11 +57,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: "50m"
-              memory: "64Mi"
-            limits:
-              cpu: "500m"
+              cpu: "100m"
               memory: "128Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
