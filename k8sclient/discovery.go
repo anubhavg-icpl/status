@@ -119,7 +119,7 @@ func buildProbe(s *corev1.Service) config.Service {
 		svc.Type = config.CheckHTTP
 		svc.URL = fmt.Sprintf("%s://%s:%d%s", scheme, host, port, path)
 		svc.Method = "GET"
-		svc.ExpectedStatus = atoi(ann[annExpected], 0)
+		svc.ExpectedStatus = atoi(ann[annExpected], 200)
 	case "tcp":
 		svc.Type = config.CheckTCP
 		svc.Host = host
