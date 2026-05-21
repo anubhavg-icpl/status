@@ -1,340 +1,398 @@
 # =============================================================================
-# Status Page - Enterprise Configuration
-# Multi-Protocol Health Monitoring System
+# Status Page - Invinsense Cluster Health Monitoring
+# Multi-namespace: invinsense + ingress + cert-manager + envoy-gateway + cnpg
 # =============================================================================
 
-title: "System Status"
-description: "Real-time system status and uptime monitoring"
+title: "Invinsense Cluster Status"
+description: "Real-time health monitoring across the cluster"
 base_url: "http://localhost:8080"
 
-# Optional branding
-# logo: "https://example.com/logo.svg"
-# favicon: "https://example.com/favicon.ico"
-
-# Theme customization
 theme:
   primary_color: "#3B82F6"
   accent_color: "#10B981"
   dark_mode: true
 
-# Server configuration
 server:
   port: 8080
   read_timeout: 15s
   write_timeout: 15s
 
-# Data storage
 storage:
   data_dir: "/data"
 
-# API configuration - supports multiple auth methods
 api:
   enabled: true
   key: "your-secret-api-key-here"
-  # bearer_token: "your-bearer-token"
-  # basic_auth:
-  #   enabled: true
-  #   username: "admin"
-  #   password: "secure-password"
-  # allowed_ips: ["127.0.0.1", "10.0.0.0/8"]
   rate_limit: 100
 
-# Redis configuration (optional — enables multi-replica support)
-# Provides: distributed rate limiting, cross-pod WebSocket event broadcast
-# Enable when deploying 2+ replicas. Single replica: leave disabled.
 redis:
-  enabled: false          # set true when Redis is available
-  addr: "redis:6379"      # "redis" matches docker-compose/k8s service name
-  password: ""            # leave empty if no Redis auth
+  enabled: false
+  addr: "invinsense-uec-redis.invinsense.svc.cluster.local:6379"
+  password: "RedisCluster@2026!"
   db: 0
 
-# Webhook notifications
 webhooks: []
-  # - id: "slack-alerts"
-  #   name: "Slack"
-  #   url: "https://hooks.slack.com/services/YOUR/WEBHOOK"
-  #   type: "slack"
-  #   events: ["incident.created", "incident.resolved"]
-  #   enabled: true
-
-# =============================================================================
-# SERVICES - Multi-Protocol Health Checks
-# =============================================================================
-# Supported types:
-#   - http/https: Web endpoints with status codes, headers, body validation
-#   - tcp: Port connectivity checks
-#   - udp: UDP service checks
-#   - icmp: Ping/latency checks
-#   - dns: DNS resolution (A, AAAA, MX, TXT, CNAME, NS)
-#   - tls: SSL/TLS certificate expiry monitoring
-#   - smtp: Email server (port 25/465/587)
-#   - ssh: SSH server banner check
-#   - pop3: POP3 mail server
-#   - imap: IMAP mail server
-#   - ftp: FTP server
-#   - ntp: Time server synchronization
-#   - ldap: Directory server
-#   - redis: Redis cache PING/PONG
-#   - mongodb: MongoDB connectivity
-#   - mysql: MySQL server handshake
-#   - postgres: PostgreSQL connectivity
-#   - grpc: gRPC endpoint
-#   - quic: HTTP/3 QUIC protocol
-#   - websocket: WebSocket connectivity
-# =============================================================================
 
 services:
-  # ---------------------------------------------------------------------------
-  # HTTP/HTTPS - Web Services
-  # ---------------------------------------------------------------------------
-  - name: "API Server"
+
+  # ============================ Invinsense Core ============================
+  - name: "Invinsense API"
     type: http
-    group: "Core Services"
-    url: "https://api.github.com"
+    group: "Invinsense Core"
+    url: "http://invinsense-api.invinsense.svc.cluster.local/health"
     method: GET
     interval: 30s
     timeout: 10s
     expected_status: 200
-    headers:
-      Accept: "application/json"
-    description: "REST API endpoint"
+    description: "Invinsense REST API (/health)"
 
-  - name: "Website"
+  - name: "Invinsense Web"
     type: http
-    group: "Core Services"
-    url: "https://github.com"
+    group: "Invinsense Core"
+    url: "http://invinsense-web.invinsense.svc.cluster.local:3000/"
+    method: GET
+    interval: 30s
+    timeout: 10s
+    description: "Invinsense web UI"
+
+  - name: "DAM Server"
+    type: http
+    group: "Invinsense Core"
+    url: "http://dam-server.invinsense.svc.cluster.local/"
+    method: GET
+    interval: 30s
+    timeout: 10s
+    description: "DAM server"
+
+  - name: "Status (self)"
+    type: http
+    group: "Invinsense Core"
+    url: "http://status.invinsense.svc.cluster.local/healthz"
+    method: GET
+    interval: 60s
+    timeout: 5s
+    expected_status: 200
+    description: "Status page self-check"
+
+  # ============================ Observability ==============================
+  - name: "OTel Collector (Health)"
+    type: http
+    group: "Observability"
+    url: "http://invinsense-otel-collector.invinsense.svc.cluster.local:13133/"
+    method: GET
+    interval: 30s
+    timeout: 10s
+    description: "OpenTelemetry collector health endpoint"
+
+  - name: "OTel Collector (OTLP gRPC)"
+    type: tcp
+    group: "Observability"
+    host: "invinsense-otel-collector.invinsense.svc.cluster.local"
+    port: 4317
+    interval: 30s
+    timeout: 5s
+    description: "OTLP gRPC ingest"
+
+  - name: "OTel Collector (OTLP HTTP)"
+    type: tcp
+    group: "Observability"
+    host: "invinsense-otel-collector.invinsense.svc.cluster.local"
+    port: 4318
+    interval: 30s
+    timeout: 5s
+    description: "OTLP HTTP ingest"
+
+  - name: "Clickstack"
+    type: http
+    group: "Observability"
+    url: "http://invinsense-clickstack.invinsense.svc.cluster.local:8080/"
+    method: GET
+    interval: 30s
+    timeout: 10s
+    description: "Clickstack frontend"
+
+  - name: "Clickstack OpAMP"
+    type: tcp
+    group: "Observability"
+    host: "invinsense-clickstack.invinsense.svc.cluster.local"
+    port: 4320
+    interval: 60s
+    timeout: 5s
+    description: "Clickstack OpAMP port"
+
+  - name: "ClickHouse HTTP"
+    type: http
+    group: "Observability"
+    url: "http://invinsense-clickhouse.invinsense.svc.cluster.local:8123/"
     method: GET
     interval: 30s
     timeout: 10s
     expected_status: 200
-    description: "Public website"
+    description: "ClickHouse HTTP interface"
 
-  - name: "CDN"
+  - name: "ClickHouse Native"
+    type: tcp
+    group: "Observability"
+    host: "invinsense-clickhouse.invinsense.svc.cluster.local"
+    port: 9000
+    interval: 30s
+    timeout: 5s
+    description: "ClickHouse native TCP"
+
+  # =============================== Databases ===============================
+  - name: "MongoDB"
+    type: mongodb
+    group: "Databases"
+    host: "invinsense-mongo.invinsense.svc.cluster.local"
+    port: 27017
+    interval: 30s
+    timeout: 5s
+    description: "Invinsense MongoDB"
+
+  - name: "PostgreSQL (pgpool)"
+    type: postgres
+    group: "Databases"
+    host: "invinsense-postgresqlha-pgpool.invinsense.svc.cluster.local"
+    port: 5432
+    interval: 30s
+    timeout: 5s
+    description: "Postgres HA pgpool"
+
+  - name: "PostgreSQL (primary)"
+    type: postgres
+    group: "Databases"
+    host: "invinsense-postgresqlha-postgresql.invinsense.svc.cluster.local"
+    port: 5432
+    interval: 30s
+    timeout: 5s
+    description: "Postgres HA primary"
+
+  - name: "Redis (UEC)"
+    type: redis
+    group: "Databases"
+    host: "invinsense-uec-redis.invinsense.svc.cluster.local"
+    port: 6379
+    password: "RedisCluster@2026!"
+    interval: 30s
+    timeout: 5s
+    description: "Invinsense UEC Redis (auth)"
+
+  # =============================== Messaging ===============================
+  - name: "NATS (Client)"
+    type: tcp
+    group: "Messaging"
+    host: "invinsense-nats.invinsense.svc.cluster.local"
+    port: 4222
+    interval: 30s
+    timeout: 5s
+    description: "NATS client port"
+
+  - name: "NATS (Monitoring)"
     type: http
-    group: "Edge Services"
-    url: "https://cdn.jsdelivr.net/npm/jquery/dist/jquery.min.js"
-    method: HEAD
+    group: "Messaging"
+    url: "http://invinsense-nats.invinsense.svc.cluster.local:8222/healthz"
+    method: GET
+    interval: 30s
+    timeout: 10s
+    expected_status: 200
+    description: "NATS monitoring/health"
+
+  - name: "NATS (Cluster)"
+    type: tcp
+    group: "Messaging"
+    host: "invinsense-nats.invinsense.svc.cluster.local"
+    port: 6222
+    interval: 60s
+    timeout: 5s
+    description: "NATS cluster routes"
+
+  # ============================ Object Storage =============================
+  - name: "RustFS API"
+    type: tcp
+    group: "Storage"
+    host: "invinsense-uec-rustfs.invinsense.svc.cluster.local"
+    port: 9000
+    interval: 30s
+    timeout: 5s
+    description: "RustFS S3-compatible API"
+
+  - name: "RustFS Console"
+    type: http
+    group: "Storage"
+    url: "http://invinsense-uec-rustfs.invinsense.svc.cluster.local:9001/health"
+    method: GET
     interval: 60s
     timeout: 10s
     expected_status: 200
-    description: "Content delivery network"
+    description: "RustFS console /health"
 
-  # ---------------------------------------------------------------------------
-  # TLS Certificate Monitoring
-  # ---------------------------------------------------------------------------
-  - name: "GitHub SSL"
+  # ================================ Harbor =================================
+  - name: "Harbor (LB)"
+    type: http
+    group: "Harbor"
+    url: "http://harbor.invinsense.svc.cluster.local/"
+    method: GET
+    interval: 30s
+    timeout: 10s
+    description: "Harbor frontend (nginx)"
+
+  - name: "Harbor Portal"
+    type: http
+    group: "Harbor"
+    url: "http://harbor-portal.invinsense.svc.cluster.local/"
+    method: GET
+    interval: 30s
+    timeout: 10s
+    description: "Harbor UI portal"
+
+  - name: "Harbor Core API"
+    type: http
+    group: "Harbor"
+    url: "http://harbor-core.invinsense.svc.cluster.local/api/v2.0/ping"
+    method: GET
+    interval: 30s
+    timeout: 10s
+    expected_status: 200
+    description: "Harbor core API ping"
+
+  - name: "Harbor Registry v2"
+    type: http
+    group: "Harbor"
+    url: "http://harbor-registry.invinsense.svc.cluster.local:5000/v2/"
+    method: GET
+    interval: 30s
+    timeout: 10s
+    expected_status: 401
+    description: "Registry /v2/ (401 = healthy, auth required)"
+
+  - name: "Harbor JobService"
+    type: tcp
+    group: "Harbor"
+    host: "harbor-jobservice.invinsense.svc.cluster.local"
+    port: 80
+    interval: 30s
+    timeout: 5s
+    description: "Harbor jobservice"
+
+  - name: "Harbor Trivy"
+    type: tcp
+    group: "Harbor"
+    host: "harbor-trivy.invinsense.svc.cluster.local"
+    port: 8080
+    interval: 60s
+    timeout: 5s
+    description: "Harbor Trivy scanner"
+
+  - name: "Harbor Exporter"
+    type: tcp
+    group: "Harbor"
+    host: "harbor-exporter.invinsense.svc.cluster.local"
+    port: 8001
+    interval: 60s
+    timeout: 5s
+    description: "Harbor metrics exporter"
+
+  - name: "Harbor Database"
+    type: postgres
+    group: "Harbor"
+    host: "harbor-database.invinsense.svc.cluster.local"
+    port: 5432
+    interval: 60s
+    timeout: 5s
+    description: "Harbor Postgres backend"
+
+  - name: "Harbor Redis"
+    type: tcp
+    group: "Harbor"
+    host: "harbor-redis.invinsense.svc.cluster.local"
+    port: 6379
+    interval: 60s
+    timeout: 5s
+    description: "Harbor Redis backend (TCP probe)"
+
+  # ============================ Cluster Ingress ============================
+  - name: "Ingress NGINX (HTTP)"
+    type: http
+    group: "Cluster Ingress"
+    url: "http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/"
+    method: GET
+    interval: 30s
+    timeout: 10s
+    expected_status: 404
+    description: "ingress-nginx LB (404 default backend = healthy)"
+
+  - name: "Ingress NGINX (HTTPS)"
+    type: tcp
+    group: "Cluster Ingress"
+    host: "ingress-nginx-controller.ingress-nginx.svc.cluster.local"
+    port: 443
+    interval: 30s
+    timeout: 5s
+    description: "ingress-nginx HTTPS listener (TCP probe — cert is for external host)"
+
+  - name: "Envoy Gateway (admin)"
+    type: tcp
+    group: "Cluster Ingress"
+    host: "envoy-gateway.envoy-gateway-system.svc.cluster.local"
+    port: 19001
+    interval: 60s
+    timeout: 5s
+    description: "Envoy Gateway admin port"
+
+  - name: "Envoy UEC Gateway (LB)"
+    type: http
+    group: "Cluster Ingress"
+    url: "http://envoy-invinsense-invinsense-uec-gateway-022f0115.envoy-gateway-system.svc.cluster.local/"
+    method: GET
+    interval: 30s
+    timeout: 10s
+    expected_status: 404
+    description: "Envoy LB for UEC gateway"
+
+  # ============================ Control Plane ==============================
+  - name: "Cert-Manager (metrics)"
+    type: tcp
+    group: "Control Plane"
+    host: "cert-manager.cert-manager.svc.cluster.local"
+    port: 9402
+    interval: 60s
+    timeout: 5s
+    description: "cert-manager metrics"
+
+  - name: "Cert-Manager Webhook"
+    type: tcp
+    group: "Control Plane"
+    host: "cert-manager-webhook.cert-manager.svc.cluster.local"
+    port: 443
+    interval: 60s
+    timeout: 5s
+    description: "cert-manager webhook"
+
+  - name: "CNPG Webhook"
+    type: tcp
+    group: "Control Plane"
+    host: "cnpg-webhook-service.cnpg-system.svc.cluster.local"
+    port: 443
+    interval: 60s
+    timeout: 5s
+    description: "CloudNativePG webhook"
+
+  - name: "MetalLB Webhook"
+    type: tcp
+    group: "Control Plane"
+    host: "metallb-webhook-service.metallb-system.svc.cluster.local"
+    port: 443
+    interval: 60s
+    timeout: 5s
+    description: "MetalLB webhook"
+
+  # ================================ Security ===============================
+  - name: "Harbor TLS (public)"
     type: tls
     group: "Security"
-    host: "github.com"
+    host: "harbor.invinsense.dev"
     port: 443
     interval: 1h
     timeout: 10s
     tls_warn_days: 30
-    description: "TLS certificate expiry check"
-
-  - name: "Google SSL"
-    type: tls
-    group: "Security"
-    host: "google.com"
-    port: 443
-    interval: 1h
-    timeout: 10s
-    tls_warn_days: 14
-    description: "Google certificate monitoring"
-
-  # ---------------------------------------------------------------------------
-  # DNS Checks
-  # ---------------------------------------------------------------------------
-  - name: "DNS A Record"
-    type: dns
-    group: "Infrastructure"
-    host: "github.com"
-    dns_record_type: A
-    dns_resolver: "8.8.8.8:53"
-    interval: 60s
-    timeout: 5s
-    description: "DNS resolution check"
-
-  - name: "DNS MX Records"
-    type: dns
-    group: "Infrastructure"
-    host: "github.com"
-    dns_record_type: MX
-    dns_resolver: "1.1.1.1:53"
-    interval: 5m
-    timeout: 5s
-    description: "Mail server DNS lookup"
-
-  # ---------------------------------------------------------------------------
-  # TCP Port Checks
-  # ---------------------------------------------------------------------------
-  - name: "Database Port"
-    type: tcp
-    group: "Infrastructure"
-    host: "github.com"
-    port: 443
-    interval: 30s
-    timeout: 5s
-    description: "Database connectivity"
-
-  # ---------------------------------------------------------------------------
-  # SSH Server Check
-  # ---------------------------------------------------------------------------
-  - name: "SSH Gateway"
-    type: ssh
-    group: "Infrastructure"
-    host: "github.com"
-    port: 22
-    interval: 60s
-    timeout: 5s
-    description: "SSH server availability"
-
-  # ---------------------------------------------------------------------------
-  # UDP Checks
-  # ---------------------------------------------------------------------------
-  - name: "Google DNS (UDP)"
-    type: udp
-    group: "Infrastructure"
-    host: "8.8.8.8"
-    port: 53
-    interval: 60s
-    timeout: 5s
-    description: "Google Public DNS"
-
-  # ---------------------------------------------------------------------------
-  # ICMP Ping
-  # ---------------------------------------------------------------------------
-  - name: "Network Gateway"
-    type: icmp
-    group: "Network"
-    host: "8.8.8.8"
-    interval: 30s
-    timeout: 5s
-    description: "Network latency check"
-
-  # ---------------------------------------------------------------------------
-  # NTP Time Server
-  # ---------------------------------------------------------------------------
-  - name: "NTP Server"
-    type: ntp
-    group: "Infrastructure"
-    host: "time.google.com"
-    port: 123
-    interval: 5m
-    timeout: 5s
-    description: "Time synchronization"
-
-  # ---------------------------------------------------------------------------
-  # HTTP/3 QUIC
-  # ---------------------------------------------------------------------------
-  - name: "QUIC Server"
-    type: quic
-    group: "Edge Services"
-    url: "https://www.google.com"
-    interval: 60s
-    timeout: 5s
-    description: "HTTP/3 QUIC endpoint"
-
-  # ---------------------------------------------------------------------------
-  # WebSocket
-  # ---------------------------------------------------------------------------
-  - name: "WebSocket"
-    type: websocket
-    group: "Real-time"
-    url: "wss://echo.websocket.org"
-    interval: 60s
-    timeout: 10s
-    description: "WebSocket connectivity"
-
-  # ---------------------------------------------------------------------------
-  # Example: Database Checks (uncomment to enable)
-  # ---------------------------------------------------------------------------
-  # - name: "Redis Cache"
-  #   type: redis
-  #   group: "Databases"
-  #   host: "localhost"
-  #   port: 6379
-  #   interval: 30s
-  #   timeout: 5s
-  #   description: "Redis cache server"
-
-  # - name: "MySQL Primary"
-  #   type: mysql
-  #   group: "Databases"
-  #   host: "localhost"
-  #   port: 3306
-  #   interval: 30s
-  #   timeout: 5s
-  #   description: "MySQL database"
-
-  # - name: "PostgreSQL"
-  #   type: postgres
-  #   group: "Databases"
-  #   host: "localhost"
-  #   port: 5432
-  #   interval: 30s
-  #   timeout: 5s
-  #   description: "PostgreSQL database"
-
-  # - name: "MongoDB"
-  #   type: mongodb
-  #   group: "Databases"
-  #   host: "localhost"
-  #   port: 27017
-  #   interval: 30s
-  #   timeout: 5s
-  #   description: "MongoDB cluster"
-
-  # ---------------------------------------------------------------------------
-  # Example: Email Server Checks (uncomment to enable)
-  # ---------------------------------------------------------------------------
-  # - name: "SMTP Server"
-  #   type: smtp
-  #   group: "Email"
-  #   host: "smtp.example.com"
-  #   port: 25
-  #   interval: 60s
-  #   timeout: 10s
-  #   description: "Outbound mail server"
-
-  # - name: "IMAP Server"
-  #   type: imap
-  #   group: "Email"
-  #   host: "imap.example.com"
-  #   port: 993
-  #   interval: 60s
-  #   timeout: 10s
-  #   description: "IMAP mail access"
-
-  # ---------------------------------------------------------------------------
-  # Example: FTP/LDAP (uncomment to enable)
-  # ---------------------------------------------------------------------------
-  # - name: "FTP Server"
-  #   type: ftp
-  #   group: "File Services"
-  #   host: "ftp.example.com"
-  #   port: 21
-  #   interval: 60s
-  #   timeout: 10s
-  #   description: "FTP file server"
-
-  # - name: "LDAP Directory"
-  #   type: ldap
-  #   group: "Directory"
-  #   host: "ldap.example.com"
-  #   port: 389
-  #   interval: 60s
-  #   timeout: 5s
-  #   description: "LDAP directory server"
-
-  # ---------------------------------------------------------------------------
-  # Example: gRPC (uncomment to enable)
-  # ---------------------------------------------------------------------------
-  # - name: "gRPC Service"
-  #   type: grpc
-  #   group: "Microservices"
-  #   host: "grpc.example.com"
-  #   port: 443
-  #   interval: 30s
-  #   timeout: 5s
-  #   description: "gRPC endpoint"
+    description: "harbor.invinsense.dev cert expiry"

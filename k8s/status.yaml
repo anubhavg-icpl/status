@@ -1,0 +1,107 @@
+# Status page raw k8s manifest for invinsense namespace
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: status
+  labels:
+    app: status
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: status
+  template:
+    metadata:
+      labels:
+        app: status
+    spec:
+      serviceAccountName: status
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: status
+          image: harbor.invinsense.dev/infra/status:f47d3f2-r1
+          imagePullPolicy: IfNotPresent
+          args: ["-config", "/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "128Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config-volume
+              mountPath: /config.yaml
+              subPath: config.yaml
+            - name: data-volume
+              mountPath: /data
+      volumes:
+        - name: config-volume
+          configMap:
+            name: status-config
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: status-data-pvc
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: status
+  labels:
+    app: status
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: status
+  labels:
+    app: status
+spec:
+  type: ClusterIP
+  selector:
+    app: status
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP

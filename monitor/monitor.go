@@ -1335,6 +1335,24 @@ func (m *Monitor) checkRedis(svc config.Service) {
 
 	conn.SetDeadline(time.Now().Add(svc.Timeout))
 
+	// AUTH first if password configured
+	if svc.Password != "" {
+		authCmd := "AUTH " + svc.Password + "\r\n"
+		if svc.Username != "" {
+			authCmd = "AUTH " + svc.Username + " " + svc.Password + "\r\n"
+		}
+		if _, err = conn.Write([]byte(authCmd)); err != nil {
+			m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, "Redis AUTH write failed")
+			return
+		}
+		authBuf := make([]byte, 128)
+		n, err := conn.Read(authBuf)
+		if err != nil || !strings.HasPrefix(string(authBuf[:n]), "+OK") {
+			m.updateStatus(svc.Name, StatusDown, time.Since(start), 0, "Redis AUTH failed: "+strings.TrimSpace(string(authBuf[:n])))
+			return
+		}
+	}
+
 	// Send PING command
 	_, err = conn.Write([]byte("PING\r\n"))
 	if err != nil {

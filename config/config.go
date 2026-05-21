@@ -138,6 +138,9 @@ type Service struct {
 	// SMTP/Email specific
 	SMTPStartTLS   bool              `yaml:"smtp_starttls"`   // Use STARTTLS
 	SMTPAuth       bool              `yaml:"smtp_auth"`       // Require auth response
+	// Auth (Redis/MongoDB/etc.)
+	Username       string            `yaml:"username"`
+	Password       string            `yaml:"password"`
 }
 
 // Incident represents a past or ongoing incident
