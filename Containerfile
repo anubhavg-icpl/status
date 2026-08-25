@@ -1,6 +1,9 @@
 # =============================================================================
 # Status Page - Multi-Stage Container Build
-# Produces a minimal scratch-based image (~15MB)
+# Produces a distroless image: no shell, no package manager, runs as UID 65532.
+# The Go binary is statically linked (CGO_ENABLED=0) and carries the templates,
+# static assets and service worker via //go:embed, so the runtime stage copies
+# only the binary and the default config.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
