@@ -112,6 +112,30 @@ func (s *Snapshot) Issues() []Issue {
 		}
 	}
 
+	// Carry a failing pod's error up onto its workload's issue. The workload
+	// issue is the one that pages; without this an operator gets "0/1 ready"
+	// and has to go looking for the reason.
+	//
+	// Matched on the pod-name prefix rather than the namespace alone: pods are
+	// named "<workload>-<hash>-<rand>", and namespace-only matching would pin
+	// one pod's error onto every broken workload beside it.
+	for i := range out {
+		w := &out[i]
+		if w.Namespace == "" || w.Kind == "Node" || w.Kind == "PVC" || w.Kind == "Pod" {
+			continue
+		}
+		for _, p := range s.Problems {
+			if p.LogExcerpt == "" || p.Namespace != w.Namespace {
+				continue
+			}
+			if !strings.HasPrefix(p.Name, w.Name+"-") {
+				continue
+			}
+			w.Message = strings.TrimSpace(w.Message + " · " + p.LogExcerpt)
+			break
+		}
+	}
+
 	// --- Pods: the detail an operator needs to act on the workload alert.
 	for _, p := range s.Problems {
 		out = append(out, Issue{
@@ -198,6 +222,17 @@ func podIssueState(p ProblemPod) string {
 
 // podSeverity grades a pod failure by how likely it is to be self-healing.
 func podSeverity(reason string) string {
+	// Terminated reasons arrive prefixed ("Terminated:Error"), and a container
+	// exiting non-zero is exactly as serious as the crash loop it becomes.
+	// Matching only the bare names graded these minor, which the severity
+	// floor then filtered out before delivery — the failure reached the page
+	// but never a phone.
+	if bare, ok := strings.CutPrefix(reason, "Terminated:"); ok {
+		if bare == "Completed" {
+			return SeverityMinor
+		}
+		return SeverityMajor
+	}
 	switch reason {
 	case "CrashLoopBackOff", "Failed", "Evicted", "OOMKilled":
 		return SeverityMajor

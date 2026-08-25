@@ -129,3 +129,33 @@ func TestPodSeverityTreatsImageErrorsAsMajor(t *testing.T) {
 	}
 	assert.Equal(t, SeverityMinor, podSeverity("NotReady"))
 }
+
+func TestTerminatedReasonsGradeAsMajor(t *testing.T) {
+	// These arrive prefixed. Grading them minor let the severity floor filter
+	// them out before delivery — the failure reached the page, never a phone.
+	assert.Equal(t, SeverityMajor, podSeverity("Terminated:Error"))
+	assert.Equal(t, SeverityMajor, podSeverity("Terminated:OOMKilled"))
+	assert.Equal(t, SeverityMinor, podSeverity("Terminated:Completed"),
+		"a job that finished is not a failure")
+}
+
+func TestWorkloadIssueCarriesItsOwnPodsError(t *testing.T) {
+	s := &Snapshot{
+		Workloads: []WorkloadInfo{
+			{Kind: "Deployment", Namespace: "prod", Name: "api", Status: "down", Desired: 1},
+			{Kind: "Deployment", Namespace: "prod", Name: "worker", Status: "down", Desired: 1},
+		},
+		Problems: []ProblemPod{
+			{Namespace: "prod", Name: "api-7d9f4b6c8-x2klm", Reason: "CrashLoopBackOff",
+				LogExcerpt: "app: Permission denied"},
+		},
+	}
+	byName := map[string]string{}
+	for _, i := range s.Issues() {
+		byName[i.Name] = i.Message
+	}
+	assert.Contains(t, byName["api"], "Permission denied",
+		"the workload alert should name why its replicas are failing")
+	assert.NotContains(t, byName["worker"], "Permission denied",
+		"a neighbouring workload must not inherit an unrelated pod's error")
+}
