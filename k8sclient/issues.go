@@ -160,6 +160,23 @@ func (s *Snapshot) Issues() []Issue {
 }
 
 func podIssueMessage(p ProblemPod) string {
+	// The log excerpt leads: an operator reading this on a phone wants the
+	// error first, and the restart count second.
+	if p.LogExcerpt != "" {
+		var b strings.Builder
+		b.WriteString(p.LogExcerpt)
+		if p.Restarts > 0 {
+			fmt.Fprintf(&b, " · %d restarts", p.Restarts)
+		}
+		if p.Node != "" {
+			fmt.Fprintf(&b, " · node %s", p.Node)
+		}
+		return b.String()
+	}
+	return podIssueState(p)
+}
+
+func podIssueState(p ProblemPod) string {
 	var b strings.Builder
 	if p.Restarts > 0 {
 		fmt.Fprintf(&b, "%d restarts", p.Restarts)

@@ -54,6 +54,13 @@ type ClusterAlertsConfig struct {
 	// MaxTracked caps the issue registry so a cluster-wide meltdown cannot
 	// grow this process's memory without bound.
 	MaxTracked int `yaml:"max_tracked" json:"max_tracked"`
+	// IncludeLogs pulls the error tail from failing containers so an alert
+	// names the error, not just the state. Requires the pods/log RBAC verb.
+	IncludeLogs bool `yaml:"include_logs" json:"include_logs"`
+	// MaxLogReads bounds how many pods have their logs read per reconcile.
+	// Each read is an apiserver round-trip; a cluster with 200 broken pods
+	// must not turn one reconcile into 200 calls.
+	MaxLogReads int `yaml:"max_log_reads" json:"max_log_reads"`
 }
 
 // ClusterConfig controls the Kubernetes cluster view on the status page.
@@ -113,6 +120,8 @@ func defaultAlerts() AlertsConfig {
 			MinDuration: 2 * time.Minute,
 			MinSeverity: "major",
 			MaxTracked:  500,
+			IncludeLogs: true,
+			MaxLogReads: 12,
 		},
 	}
 }
@@ -185,6 +194,9 @@ func (c *Config) applyAlertDefaults() {
 	if c.Alerts.Cluster.MaxTracked <= 0 {
 		c.Alerts.Cluster.MaxTracked = d.Cluster.MaxTracked
 	}
+	if c.Alerts.Cluster.MaxLogReads <= 0 {
+		c.Alerts.Cluster.MaxLogReads = d.Cluster.MaxLogReads
+	}
 }
 
 // applyEnvOverrides lets secrets stay out of config.yaml and arrive from a
@@ -224,6 +236,7 @@ func (c *Config) applyEnvOverrides() {
 	setStr(&c.Alerts.Ntfy.Email, "STATUS_NTFY_EMAIL")
 
 	setBool(&c.Alerts.Cluster.Enabled, "STATUS_CLUSTER_ALERTS_ENABLED")
+	setBool(&c.Alerts.Cluster.IncludeLogs, "STATUS_CLUSTER_INCLUDE_LOGS")
 	setStr(&c.Alerts.Cluster.MinSeverity, "STATUS_CLUSTER_MIN_SEVERITY")
 
 	setBool(&c.Cluster.AutoWorkloads.Enabled, "STATUS_AUTO_WORKLOADS")

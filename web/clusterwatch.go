@@ -39,6 +39,11 @@ type clusterWatcher struct {
 	minRank  int
 	cooldown time.Duration
 	lastSent map[string]time.Time
+
+	// enrich attaches log excerpts before the diff runs, so a newly-opened
+	// issue carries the error text in the very first alert rather than only
+	// in whatever the page happens to render later.
+	enrich func(context.Context, *k8sclient.Snapshot)
 }
 
 func newClusterWatcher(cfg *config.Config, n *notify.Notifier) *clusterWatcher {
@@ -78,6 +83,9 @@ func (w *clusterWatcher) run(ctx context.Context, snapshot func(context.Context)
 			if err != nil {
 				log.Printf("cluster watch: snapshot failed: %v", err)
 				continue
+			}
+			if w.enrich != nil {
+				w.enrich(ctx, snap)
 			}
 			w.reconcile(snap)
 		}

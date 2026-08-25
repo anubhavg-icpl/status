@@ -21,6 +21,13 @@ rules:
       - events
       - persistentvolumeclaims
     verbs: [get, list, watch]
+  # Log tails for failing pods, so an alert can name the error instead of only
+  # the state. Read-only, and only pulled for pods already detected as broken.
+  # NOTE: application logs can contain tokens an app printed itself. Excerpts
+  # are capped and only reach the configured alert channels.
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
   - apiGroups: [""]
     resources: [secrets]
     verbs: [get] # narrow: read referenced auth secrets only on demand

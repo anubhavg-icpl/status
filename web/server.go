@@ -129,6 +129,7 @@ func NewServer(cfg *config.Config, mon *monitor.Monitor, store *storage.Storage,
 	}
 	s.alerts = newAlertTracker(cfg, notif)
 	s.clusterWatch = newClusterWatcher(cfg, notif)
+	s.clusterWatch.enrich = s.enrichLogs
 	s.auth = newAuthenticator(cfg.Auth)
 	if cfg.Redis.Enabled {
 		rdb := redis.NewClient(&redis.Options{

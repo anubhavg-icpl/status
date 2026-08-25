@@ -47,6 +47,7 @@ func (s *Server) handleAPICluster(w http.ResponseWriter, r *http.Request) {
 
 	// Refresh durations on the way out so a page view always shows current
 	// "firing for 14m" numbers rather than the last tick's.
+	s.enrichLogs(r.Context(), snap)
 	s.clusterWatch.reconcile(snap)
 
 	s.jsonResponseWithMeta(w, map[string]any{
@@ -102,6 +103,19 @@ func (s *Server) clusterSnapshot(ctx context.Context) (*k8sclient.Snapshot, erro
 		return nil, err
 	}
 	return snap, nil
+}
+
+// enrichLogs attaches the error tail from failing containers, so both the page
+// and the alert name the error rather than only the pod state. Best-effort and
+// bounded: a read that fails leaves the state-only message intact.
+func (s *Server) enrichLogs(ctx context.Context, snap *k8sclient.Snapshot) {
+	cfg := s.config.Alerts.Cluster
+	if !cfg.IncludeLogs || snap == nil {
+		return
+	}
+	if kc := s.monitor.K8s(); kc != nil {
+		kc.EnrichProblemPods(ctx, snap, cfg.MaxLogReads)
+	}
 }
 
 func clusterDisabledReason(enabled, hasClient bool) string {

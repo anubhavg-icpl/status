@@ -126,6 +126,9 @@ type ProblemPod struct {
 	Message   string    `json:"message"`
 	Restarts  int32     `json:"restarts"`
 	StartedAt time.Time `json:"started_at"`
+	// LogExcerpt is the error tail from the failing container, filled in by
+	// EnrichProblemPods. Empty when logs are unreadable or say nothing.
+	LogExcerpt string `json:"log_excerpt,omitempty"`
 }
 
 // EventInfo is a recent Warning event.
