@@ -571,6 +571,231 @@
             background: var(--error);
         }
 
+
+        /* ===== Kubernetes cluster ===== */
+        .cluster-section {
+            margin-bottom: 48px;
+        }
+
+        .cluster-section[hidden] {
+            display: none;
+        }
+
+        .cluster-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .cluster-header h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        .chip {
+            font-size: 0.6875rem;
+            padding: 4px 10px;
+            background: var(--bg-tertiary);
+            border-radius: 100px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            white-space: nowrap;
+        }
+
+        .chip.ok { background: var(--success-bg); color: var(--success); }
+        .chip.warn { background: var(--warning-bg); color: var(--warning); }
+        .chip.bad { background: var(--error-bg); color: var(--error); }
+        .cluster-header .chip:first-of-type { margin-left: auto; }
+
+        .cluster-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .cluster-stat {
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 18px 20px;
+        }
+
+        .cluster-stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            font-weight: 700;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+        }
+
+        .cluster-stat-value.success { color: var(--success); }
+        .cluster-stat-value.warning { color: var(--warning); }
+        .cluster-stat-value.error { color: var(--error); }
+
+        .cluster-stat-label {
+            margin-top: 6px;
+            font-size: 0.6875rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .cluster-stat-sub {
+            margin-top: 2px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .cluster-meter {
+            height: 6px;
+            margin-top: 12px;
+            background: var(--bg-tertiary);
+            border-radius: 100px;
+            overflow: hidden;
+        }
+
+        .cluster-meter-fill {
+            height: 100%;
+            border-radius: 100px;
+            background: var(--success);
+            transition: width 0.4s ease;
+        }
+
+        .cluster-meter-fill.warning { background: var(--warning); }
+        .cluster-meter-fill.error { background: var(--error); }
+
+        .cluster-tabs {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .cluster-tab {
+            font: inherit;
+            font-size: 0.8125rem;
+            padding: 8px 14px;
+            border-radius: 100px;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .cluster-tab:hover { color: var(--text-primary); border-color: rgba(255,255,255,0.18); }
+
+        .cluster-tab[aria-selected="true"] {
+            background: var(--bg-glass);
+            border-color: rgba(255, 255, 255, 0.18);
+            color: var(--text-primary);
+        }
+
+        .cluster-tab .chip { margin-left: 8px; }
+
+        .cluster-panel {
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .cluster-scroll { overflow-x: auto; }
+
+        .cluster-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8125rem;
+            white-space: nowrap;
+        }
+
+        .cluster-table th {
+            position: sticky;
+            top: 0;
+            text-align: left;
+            font-size: 0.6875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            padding: 14px 18px;
+            background: var(--bg-secondary);
+        }
+
+        .cluster-table td {
+            padding: 12px 18px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .cluster-table tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
+
+        .cluster-table td.name {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .cluster-table td.num,
+        .cluster-table th.num {
+            text-align: right;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .cluster-table td.wrap {
+            white-space: normal;
+            max-width: 460px;
+            color: var(--text-muted);
+        }
+
+        .cluster-empty {
+            padding: 40px 18px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        /* ===== Notification opt-in ===== */
+        .notify-btn {
+            font: inherit;
+            font-size: 0.8125rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 16px;
+            border-radius: 100px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-glass);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .notify-btn:hover:not(:disabled) {
+            color: var(--text-primary);
+            border-color: rgba(255, 255, 255, 0.18);
+        }
+
+        .notify-btn:disabled { opacity: 0.55; cursor: default; }
+        .notify-btn.on { background: var(--success-bg); color: var(--success); border-color: rgba(16,185,129,0.3); }
+        .notify-btn svg { width: 16px; height: 16px; }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .header-content {
@@ -608,6 +833,12 @@
                 flex-direction: column;
                 gap: 8px;
             }
+
+            .cluster-stats {
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            }
+
+            .cluster-header .chip:first-of-type { margin-left: 0; }
         }
     </style>
 </head>
@@ -623,8 +854,17 @@
                     {{end}}
                     <h1>{{.Title}}</h1>
                 </div>
-                <div class="last-updated">
-                    Last updated: <span id="last-update">just now</span>
+                <div class="header-actions">
+                    <button type="button" class="notify-btn" id="notify-btn" hidden>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                        </svg>
+                        <span id="notify-label">Alert me</span>
+                    </button>
+                    <div class="last-updated">
+                        Last updated: <span id="last-update">just now</span>
+                    </div>
                 </div>
             </div>
         </header>
@@ -670,6 +910,25 @@
             <div id="services-container">
                 <!-- Services will be rendered here by JavaScript -->
             </div>
+
+            <!-- Kubernetes cluster (hidden unless /api/cluster reports enabled) -->
+            <section class="cluster-section" id="cluster-section" hidden>
+                <div class="cluster-header">
+                    <h3>Kubernetes Cluster</h3>
+                    <span class="chip" id="cluster-version">—</span>
+                    <span class="chip" id="cluster-health">—</span>
+                    <span class="chip" id="cluster-warnings">—</span>
+                    <span class="chip" id="cluster-storage">—</span>
+                    <span class="chip" id="cluster-updated">—</span>
+                </div>
+
+                <div class="cluster-stats" id="cluster-stats"></div>
+
+                <div class="cluster-tabs" role="tablist" id="cluster-tabs"></div>
+                <div class="cluster-panel">
+                    <div class="cluster-scroll" id="cluster-panel"></div>
+                </div>
+            </section>
 
             <!-- Incidents -->
             <section class="incidents-section">
@@ -729,6 +988,9 @@
         document.addEventListener('DOMContentLoaded', function() {
             fetchInitialData();
             connectWebSocket();
+            loadCluster();
+            setInterval(loadCluster, 20000);
+            initPush();
         });
 
         // Fetch initial data
@@ -808,7 +1070,7 @@
                 groupEl.innerHTML = `
                     <div class="group-header">
                         <h3>${groupName}</h3>
-                        <span class="group-count">${groupServices.length} services</span>
+                        <span class="group-count">${groupServices.length} service${groupServices.length === 1 ? '' : 's'}</span>
                     </div>
                     <div class="services-grid" id="group-${groupName.replace(/\s+/g, '-')}">
                         ${groupServices.map(s => renderServiceCard(s)).join('')}
@@ -1095,7 +1357,8 @@
             if (!timestamp || timestamp === '0001-01-01T00:00:00Z') return 'Never';
             const date = new Date(timestamp);
             const now = new Date();
-            const diff = Math.floor((now - date) / 1000);
+            // Clamp: a browser clock behind the server must not read "-42s ago".
+            const diff = Math.max(0, Math.floor((now - date) / 1000));
 
             if (diff < 60) return `${diff}s ago`;
             if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
@@ -1105,6 +1368,454 @@
 
         function updateLastUpdated() {
             document.getElementById('last-update').textContent = 'just now';
+        }
+
+
+        /* ===================================================================
+         * Kubernetes cluster view
+         * =================================================================== */
+
+        // Every value below is server-side data (node names, images, event
+        // messages) rendered into innerHTML, so it is escaped without exception.
+        function esc(v) {
+            if (v === null || v === undefined) return '';
+            return String(v)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        const CLUSTER_TABS = [
+            { id: 'issues',     label: 'Issues' },
+            { id: 'nodes',      label: 'Nodes' },
+            { id: 'workloads',  label: 'Workloads' },
+            { id: 'namespaces', label: 'Namespaces' },
+            { id: 'events',     label: 'Events' },
+        ];
+
+        let clusterSnapshot = null;
+        let clusterIssues = [];
+        let clusterTab = 'nodes';
+        let clusterTabPinned = false;   // true once the reader picks a tab
+
+        async function loadCluster() {
+            try {
+                const res = await fetch('/api/cluster');
+                if (!res.ok) return;                      // 401 when the view is private
+                const body = await res.json();
+                if (!body.success || !body.data || !body.data.enabled) return;
+                clusterSnapshot = body.data.snapshot;
+                clusterIssues = body.data.issues || [];
+                // Open on Issues when something is actually broken — that is
+                // what a reader hitting this page during an outage wants.
+                if (!clusterTabPinned && clusterIssues.length > 0) clusterTab = 'issues';
+                renderCluster();
+            } catch (e) {
+                console.error('cluster fetch failed:', e);
+            }
+        }
+
+        function renderCluster() {
+            const snap = clusterSnapshot;
+            if (!snap) return;
+            const section = document.getElementById('cluster-section');
+            section.hidden = false;
+
+            const sum = snap.summary || {};
+
+            document.getElementById('cluster-version').textContent = snap.version || 'kubernetes';
+
+            const health = clusterHealth(sum);
+            const healthChip = document.getElementById('cluster-health');
+            healthChip.textContent = health.label;
+            healthChip.className = 'chip ' + health.cls;
+
+            const warn = sum.warning_events_15m || 0;
+            const warnChip = document.getElementById('cluster-warnings');
+            warnChip.textContent = `${warn} warning${warn === 1 ? '' : 's'}/15m`;
+            warnChip.className = 'chip ' + (warn === 0 ? 'ok' : 'warn');
+
+            const store = snap.storage || {};
+            const storeChip = document.getElementById('cluster-storage');
+            const badVolumes = (store.pending || 0) + (store.lost || 0);
+            storeChip.textContent = `${store.bound || 0}/${store.total || 0} PVC · ${bytes(store.requested_bytes)}`;
+            storeChip.className = 'chip ' + (badVolumes === 0 ? 'ok' : 'warn');
+
+            document.getElementById('cluster-updated').textContent =
+                'synced ' + formatLastCheck(snap.generated_at);
+
+            renderClusterStats(sum);
+            renderClusterTabs();
+            renderClusterPanel();
+        }
+
+        function clusterHealth(sum) {
+            const critical = clusterIssues.filter(i => i.severity === 'critical').length;
+            if (critical > 0) return { label: `${critical} critical`, cls: 'bad' };
+            if (clusterIssues.length > 0) return { label: `${clusterIssues.length} issues`, cls: 'warn' };
+            // No watcher data yet — fall back to the raw snapshot counters.
+            if ((sum.nodes_ready || 0) < (sum.nodes_total || 0)) return { label: 'degraded', cls: 'bad' };
+            if ((sum.pods_unhealthy || 0) > 0 || (sum.workloads_degraded || 0) > 0) {
+                return { label: 'attention', cls: 'warn' };
+            }
+            return { label: 'healthy', cls: 'ok' };
+        }
+
+        function renderClusterStats(sum) {
+            const cpuPct  = pct(sum.metrics_available ? sum.cpu_usage_milli : sum.cpu_request_milli, sum.cpu_capacity_milli);
+            const memPct  = pct(sum.metrics_available ? sum.mem_usage_bytes : sum.mem_request_bytes, sum.mem_capacity_bytes);
+            const cpuWord = sum.metrics_available ? 'used' : 'requested';
+
+            const cards = [
+                statCard(
+                    `${sum.nodes_ready || 0}/${sum.nodes_total || 0}`,
+                    'Nodes Ready',
+                    (sum.nodes_ready === sum.nodes_total) ? 'success' : 'error',
+                    `${sum.namespaces || 0} namespaces · ${sum.services || 0} services`, null
+                ),
+                statCard(
+                    `${sum.pods_running || 0}`,
+                    'Pods Running',
+                    'success',
+                    `${sum.pods_pending || 0} pending · ${sum.pods_failed || 0} failed`,
+                    null
+                ),
+                statCard(
+                    `${sum.pods_unhealthy || 0}`,
+                    'Unhealthy Pods',
+                    (sum.pods_unhealthy || 0) === 0 ? 'success' : 'error',
+                    `${sum.pods_total || 0} total`,
+                    null
+                ),
+                statCard(
+                    `${sum.workloads_degraded || 0}`,
+                    'Degraded Workloads',
+                    (sum.workloads_degraded || 0) === 0 ? 'success' : 'warning',
+                    `${sum.deployments || 0} deploy · ${sum.statefulsets || 0} sts · ${sum.daemonsets || 0} ds`,
+                    null
+                ),
+                statCard(
+                    `${cpuPct}%`,
+                    `CPU ${cpuWord}`,
+                    meterTone(cpuPct),
+                    `${millicores(sum.metrics_available ? sum.cpu_usage_milli : sum.cpu_request_milli)} / ${millicores(sum.cpu_capacity_milli)} cores`,
+                    cpuPct
+                ),
+                statCard(
+                    `${memPct}%`,
+                    `Memory ${cpuWord}`,
+                    meterTone(memPct),
+                    `${bytes(sum.metrics_available ? sum.mem_usage_bytes : sum.mem_request_bytes)} / ${bytes(sum.mem_capacity_bytes)}`,
+                    memPct
+                ),
+            ];
+            document.getElementById('cluster-stats').innerHTML = cards.join('');
+        }
+
+        function statCard(value, label, tone, sub, meter) {
+            const meterHtml = meter === null ? '' :
+                `<div class="cluster-meter"><div class="cluster-meter-fill ${meterTone(meter)}" style="width:${Math.min(100, meter)}%"></div></div>`;
+            const subHtml = sub ? `<div class="cluster-stat-sub">${esc(sub)}</div>` : '';
+            return `
+                <div class="cluster-stat">
+                    <div class="cluster-stat-value ${tone}">${esc(value)}</div>
+                    <div class="cluster-stat-label">${esc(label)}</div>
+                    ${subHtml}
+                    ${meterHtml}
+                </div>`;
+        }
+
+        function meterTone(p) {
+            if (p >= 90) return 'error';
+            if (p >= 75) return 'warning';
+            return 'success';
+        }
+
+        function pct(part, total) {
+            if (!total || total <= 0) return 0;
+            return Math.round((part / total) * 1000) / 10;
+        }
+
+        function millicores(m) {
+            if (!m) return '0';
+            return m < 1000 ? `${m}m` : (m / 1000).toFixed(2);
+        }
+
+        function bytes(n) {
+            if (!n) return '0B';
+            const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+            let i = 0, v = n;
+            while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+            return `${v.toFixed(i === 0 ? 0 : 1)}${units[i]}`;
+        }
+
+        function renderClusterTabs() {
+            const snap = clusterSnapshot;
+            const counts = {
+                issues: clusterIssues.length,
+                nodes: (snap.nodes || []).length,
+                workloads: (snap.workloads || []).length,
+                namespaces: (snap.namespaces || []).length,
+                events: (snap.events || []).length,
+            };
+            const el = document.getElementById('cluster-tabs');
+            el.innerHTML = CLUSTER_TABS.map(t => {
+                const alert = (t.id === 'issues' || t.id === 'events') && counts[t.id] > 0;
+                return `<button type="button" role="tab" class="cluster-tab" data-tab="${t.id}"
+                                aria-selected="${t.id === clusterTab}">
+                            ${esc(t.label)}<span class="chip ${alert ? 'warn' : ''}">${counts[t.id]}</span>
+                        </button>`;
+            }).join('');
+
+            el.querySelectorAll('.cluster-tab').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    clusterTab = btn.dataset.tab;
+                    clusterTabPinned = true;   // stop auto-switching under them
+                    renderClusterTabs();
+                    renderClusterPanel();
+                });
+            });
+        }
+
+        function renderClusterPanel() {
+            const snap = clusterSnapshot;
+            const host = document.getElementById('cluster-panel');
+            const renderers = {
+                issues: renderIssuesTable,
+                nodes: renderNodesTable,
+                workloads: renderWorkloadsTable,
+                namespaces: renderNamespacesTable,
+                events: renderEventsTable,
+            };
+            host.innerHTML = (renderers[clusterTab] || renderNodesTable)(snap);
+        }
+
+        function table(headers, rows, emptyMsg) {
+            if (!rows.length) return `<div class="cluster-empty">${esc(emptyMsg)}</div>`;
+            const head = headers.map(h =>
+                `<th class="${h.num ? 'num' : ''}">${esc(h.label)}</th>`).join('');
+            return `<table class="cluster-table">
+                        <thead><tr>${head}</tr></thead>
+                        <tbody>${rows.join('')}</tbody>
+                    </table>`;
+        }
+
+        function statusChip(status) {
+            const cls = { operational: 'ok', degraded: 'warn', down: 'bad' }[status] || '';
+            return `<span class="chip ${cls}">${esc(status)}</span>`;
+        }
+
+        function renderNodesTable(snap) {
+            const metrics = snap.summary && snap.summary.metrics_available;
+            const rows = (snap.nodes || []).map(n => {
+                const cpuPct = pct(metrics ? n.cpu_usage_milli : n.cpu_request_milli, n.cpu_capacity_milli);
+                const memPct = pct(metrics ? n.mem_usage_bytes : n.mem_request_bytes, n.mem_capacity_bytes);
+                const state = n.ready ? (n.schedulable ? 'Ready' : 'Ready,SchedulingDisabled') : 'NotReady';
+                const cls = n.ready ? (n.schedulable ? 'ok' : 'warn') : 'bad';
+                return `<tr>
+                    <td class="name">${esc(n.name)}</td>
+                    <td><span class="chip ${cls}">${esc(state)}</span></td>
+                    <td>${esc((n.roles || []).join(', '))}</td>
+                    <td class="num">${esc(n.pods)}${n.pods_max ? ' / ' + esc(n.pods_max) : ''}</td>
+                    <td class="num">${cpuPct}%</td>
+                    <td class="num">${memPct}%</td>
+                    <td>${esc(n.kubelet_version)}</td>
+                    <td>${esc(n.internal_ip)}</td>
+                    <td class="num">${esc(age(n.age_seconds))}</td>
+                </tr>`;
+            });
+            return table([
+                { label: 'Node' }, { label: 'State' }, { label: 'Roles' },
+                { label: 'Pods', num: true },
+                { label: metrics ? 'CPU used' : 'CPU req', num: true },
+                { label: metrics ? 'Mem used' : 'Mem req', num: true },
+                { label: 'Kubelet' }, { label: 'Internal IP' }, { label: 'Age', num: true },
+            ], rows, 'No nodes visible.');
+        }
+
+        function renderWorkloadsTable(snap) {
+            const rows = (snap.workloads || []).map(w => `
+                <tr>
+                    <td class="name">${esc(w.name)}</td>
+                    <td>${esc(w.kind)}</td>
+                    <td>${esc(w.namespace)}</td>
+                    <td class="num">${esc(w.ready)} / ${esc(w.desired)}</td>
+                    <td class="num">${esc(w.available)}</td>
+                    <td>${statusChip(w.status)}</td>
+                    <td class="wrap">${esc(w.image)}</td>
+                </tr>`);
+            return table([
+                { label: 'Name' }, { label: 'Kind' }, { label: 'Namespace' },
+                { label: 'Ready', num: true }, { label: 'Available', num: true },
+                { label: 'Status' }, { label: 'Image' },
+            ], rows, 'No workloads found.');
+        }
+
+        function renderNamespacesTable(snap) {
+            const rows = (snap.namespaces || []).map(n => `
+                <tr>
+                    <td class="name">${esc(n.name)}</td>
+                    <td><span class="chip ${n.phase === 'Active' ? 'ok' : 'warn'}">${esc(n.phase)}</span></td>
+                    <td class="num">${esc(n.pods_running)} / ${esc(n.pods)}</td>
+                    <td class="num">${n.pods_problem > 0 ? `<span style="color:var(--error)">${esc(n.pods_problem)}</span>` : '0'}</td>
+                    <td class="num">${esc(n.workloads)}</td>
+                    <td class="num">${esc(n.services)}</td>
+                    <td class="num">${esc(n.pvcs)}</td>
+                    <td class="num">${esc(millicores(n.cpu_request_milli))}</td>
+                    <td class="num">${esc(bytes(n.mem_request_bytes))}</td>
+                </tr>`);
+            return table([
+                { label: 'Namespace' }, { label: 'Phase' },
+                { label: 'Pods', num: true }, { label: 'Problem', num: true },
+                { label: 'Workloads', num: true }, { label: 'Services', num: true },
+                { label: 'PVCs', num: true },
+                { label: 'CPU req', num: true }, { label: 'Mem req', num: true },
+            ], rows, 'No namespaces visible.');
+        }
+
+        const SEVERITY_CLASS = { critical: 'bad', major: 'warn', minor: '' };
+
+        function renderIssuesTable(snap) {
+            // Fall back to the raw snapshot when the watcher has not run yet
+            // (cluster alerting off, or first load before the first reconcile).
+            if (!clusterIssues.length) {
+                const pods = (snap.problems || []).map(p => `
+                    <tr>
+                        <td><span class="chip warn">unranked</span></td>
+                        <td>${esc(p.namespace)}</td>
+                        <td class="name">Pod ${esc(p.name)}</td>
+                        <td>${esc(p.reason || p.phase)}</td>
+                        <td class="num">—</td>
+                        <td class="wrap">${esc(p.message)}</td>
+                    </tr>`);
+                return table(ISSUE_HEADERS, pods, 'No issues firing. Everything reconciles clean.');
+            }
+
+            const rows = clusterIssues.map(i => `
+                <tr>
+                    <td><span class="chip ${SEVERITY_CLASS[i.severity] || ''}">${esc(i.severity)}</span></td>
+                    <td>${esc(i.namespace || 'cluster')}</td>
+                    <td class="name">${esc(i.kind)} ${esc(i.name)}</td>
+                    <td>${esc(i.reason)}${i.alerted ? ' <span class="chip warn">alerted</span>' : ''}</td>
+                    <td class="num">${esc(age(i.duration_seconds))}</td>
+                    <td class="wrap">${esc(i.message)}</td>
+                </tr>`);
+            return table(ISSUE_HEADERS, rows, 'No issues firing.');
+        }
+
+        const ISSUE_HEADERS = [
+            { label: 'Severity' }, { label: 'Namespace' }, { label: 'Object' },
+            { label: 'Reason' }, { label: 'Firing for', num: true }, { label: 'Detail' },
+        ];
+
+        function renderEventsTable(snap) {
+            const rows = (snap.events || []).map(e => `
+                <tr>
+                    <td class="name">${esc(e.reason)}</td>
+                    <td>${esc(e.namespace)}</td>
+                    <td>${esc(e.object)}</td>
+                    <td class="num">${esc(e.count)}</td>
+                    <td class="num">${esc(formatLastCheck(e.last_seen))}</td>
+                    <td class="wrap">${esc(e.message)}</td>
+                </tr>`);
+            return table([
+                { label: 'Reason' }, { label: 'Namespace' }, { label: 'Object' },
+                { label: 'Count', num: true }, { label: 'Last seen', num: true }, { label: 'Message' },
+            ], rows, 'No warning events in the last 15 minutes.');
+        }
+
+        function age(seconds) {
+            if (!seconds) return '0s';
+            const d = Math.floor(seconds / 86400);
+            if (d > 0) return `${d}d`;
+            const h = Math.floor(seconds / 3600);
+            if (h > 0) return `${h}h`;
+            const m = Math.floor(seconds / 60);
+            if (m > 0) return `${m}m`;
+            return `${seconds}s`;
+        }
+
+        /* ===================================================================
+         * Web Push opt-in
+         * =================================================================== */
+
+        let vapidKey = null;
+
+        async function initPush() {
+            const btn = document.getElementById('notify-btn');
+            const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+            if (!supported) return;                       // Safari <16.4, http:// origins, …
+
+            try {
+                const res = await fetch('/api/push/key');
+                const body = await res.json();
+                if (!body.success || !body.data || !body.data.enabled) return;
+                vapidKey = body.data.public_key;
+            } catch (e) {
+                return;
+            }
+            if (!vapidKey) return;
+
+            btn.hidden = false;
+
+            const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => null);
+            if (!reg) { btn.hidden = true; return; }
+
+            const existing = await reg.pushManager.getSubscription();
+            setNotifyState(!!existing);
+
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                try {
+                    const sub = await reg.pushManager.getSubscription();
+                    if (sub) {
+                        await fetch('/api/push/unsubscribe', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ endpoint: sub.endpoint }),
+                        });
+                        await sub.unsubscribe();
+                        setNotifyState(false);
+                    } else {
+                        const perm = await Notification.requestPermission();
+                        if (perm !== 'granted') { setNotifyState(false, 'Blocked'); return; }
+                        const fresh = await reg.pushManager.subscribe({
+                            userVisibleOnly: true,
+                            applicationServerKey: urlBase64ToUint8Array(vapidKey),
+                        });
+                        const r = await fetch('/api/push/subscribe', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(fresh),
+                        });
+                        setNotifyState(r.ok);
+                    }
+                } catch (e) {
+                    console.error('push toggle failed:', e);
+                    setNotifyState(false, 'Unavailable');
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        }
+
+        function setNotifyState(on, labelOverride) {
+            const btn = document.getElementById('notify-btn');
+            btn.classList.toggle('on', !!on);
+            document.getElementById('notify-label').textContent =
+                labelOverride || (on ? 'Alerts on' : 'Alert me');
+        }
+
+        // The VAPID key arrives base64url-encoded; the Push API wants raw bytes.
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const raw = window.atob(base64);
+            const out = new Uint8Array(raw.length);
+            for (let i = 0; i < raw.length; ++i) out[i] = raw.charCodeAt(i);
+            return out;
         }
 
         function showConnectionStatus(connected) {

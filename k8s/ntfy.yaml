@@ -1,0 +1,177 @@
+# Self-hosted ntfy for phone alerting from the status page.
+#
+# Why in-cluster rather than ntfy.sh: alert payloads name your namespaces,
+# workloads and failure reasons. On the public server a topic name is the only
+# thing standing between that and anyone who guesses it. In-cluster, the topic
+# never leaves the network.
+#
+# Phone setup:
+#   1. Expose this Service (ingress/VPN) so the phone can reach it.
+#   2. Install the ntfy app, add the server URL, subscribe to the topic.
+#   3. Point the status page at it (see status.yaml env / status-alerts secret).
+#
+# ntfy stores messages in SQLite and is single-writer: run exactly one replica.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ntfy-config
+  labels:
+    app: ntfy
+data:
+  server.yml: |
+    # Full reference: https://github.com/binwiederhier/ntfy/blob/main/server/server.yml
+    base-url: "http://ntfy.invinsense.svc.cluster.local"
+    listen-http: ":80"
+
+    # Persistent cache so a restart does not drop undelivered alerts.
+    cache-file: "/var/cache/ntfy/cache.db"
+    cache-duration: "72h"
+
+    # Auth: deny anonymous access, then grant the status page write and your
+    # phone read. Bootstrap the users once the pod is running:
+    #   kubectl -n invinsense exec deploy/ntfy -- \
+    #     ntfy user add --role=admin admin
+    #   kubectl -n invinsense exec deploy/ntfy -- \
+    #     ntfy user add statuspage
+    #   kubectl -n invinsense exec deploy/ntfy -- \
+    #     ntfy access statuspage "invinsense-alerts" write-only
+    #   kubectl -n invinsense exec deploy/ntfy -- \
+    #     ntfy token add statuspage        # -> tk_… for the status-alerts secret
+    auth-file: "/var/lib/ntfy/user.db"
+    auth-default-access: "deny-all"
+
+    behind-proxy: true
+    attachment-cache-dir: ""
+    enable-signup: false
+    enable-login: true
+    enable-reservations: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ntfy-pvc
+  labels:
+    app: ntfy
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ntfy
+  labels:
+    app: ntfy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ntfy
+  strategy:
+    # SQLite is single-writer: never run two pods against the same volume.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: ntfy
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 2586
+        runAsGroup: 2586
+        fsGroup: 2586
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ntfy
+          image: binwiederhier/ntfy:v2.27.0
+          imagePullPolicy: IfNotPresent
+          args: ["serve"]
+          env:
+            - name: TZ
+              value: "Asia/Kolkata"
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ntfy/server.yml
+              subPath: server.yml
+              readOnly: true
+            - name: data
+              mountPath: /var/cache/ntfy
+              subPath: cache
+            - name: data
+              mountPath: /var/lib/ntfy
+              subPath: lib
+      volumes:
+        - name: config
+          configMap:
+            name: ntfy-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: ntfy-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ntfy
+  labels:
+    app: ntfy
+  annotations:
+    # The status page monitors its own alert transport: if ntfy is down, the
+    # page says so rather than silently failing to page anyone.
+    status.invinsense.dev/probe: "true"
+    status.invinsense.dev/type: "http"
+    status.invinsense.dev/path: "/v1/health"
+    status.invinsense.dev/name: "ntfy (alert transport)"
+    status.invinsense.dev/group: "Alerting"
+    status.invinsense.dev/interval: "30s"
+spec:
+  type: ClusterIP
+  selector:
+    app: ntfy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP

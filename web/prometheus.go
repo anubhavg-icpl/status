@@ -13,12 +13,13 @@ import (
 // No external dep — small surface, stable output, OpenMetrics-compatible.
 //
 // Exposed series:
-//   status_probe_up{name,group,type}              1 operational | 0 degraded/down/unknown
-//   status_probe_status{name,group,type}          1 op, 2 degraded, 3 down, 0 unknown
-//   status_probe_response_time_ms{name,group}     last observed latency
-//   status_probe_uptime_ratio{name,group}         rolling uptime % / 100
-//   status_probe_status_code{name,group}          last HTTP/DB status code, if any
-//   status_overall_up                              cluster rollup, 1/0
+//
+//	status_probe_up{name,group,type}              1 operational | 0 degraded/down/unknown
+//	status_probe_status{name,group,type}          1 op, 2 degraded, 3 down, 0 unknown
+//	status_probe_response_time_ms{name,group}     last observed latency
+//	status_probe_uptime_ratio{name,group}         rolling uptime % / 100
+//	status_probe_status_code{name,group}          last HTTP/DB status code, if any
+//	status_overall_up                              cluster rollup, 1/0
 func (s *Server) handlePrometheus(w http.ResponseWriter, _ *http.Request) {
 	statuses := s.monitor.GetAllStatuses()
 	sort.Slice(statuses, func(i, j int) bool { return statuses[i].Name < statuses[j].Name })

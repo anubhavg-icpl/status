@@ -13,31 +13,31 @@ import (
 
 // RSS 2.0 Feed with proper namespaces
 type RSSFeed struct {
-	XMLName       xml.Name   `xml:"rss"`
-	Version       string     `xml:"version,attr"`
-	AtomNS        string     `xml:"xmlns:atom,attr"`
-	ContentNS     string     `xml:"xmlns:content,attr,omitempty"`
-	DcNS          string     `xml:"xmlns:dc,attr,omitempty"`
-	Channel       RSSChannel `xml:"channel"`
+	XMLName   xml.Name   `xml:"rss"`
+	Version   string     `xml:"version,attr"`
+	AtomNS    string     `xml:"xmlns:atom,attr"`
+	ContentNS string     `xml:"xmlns:content,attr,omitempty"`
+	DcNS      string     `xml:"xmlns:dc,attr,omitempty"`
+	Channel   RSSChannel `xml:"channel"`
 }
 
 type RSSChannel struct {
-	Title          string      `xml:"title"`
-	Link           string      `xml:"link"`
-	Description    string      `xml:"description"`
-	Language       string      `xml:"language"`
-	Copyright      string      `xml:"copyright,omitempty"`
-	ManagingEditor string      `xml:"managingEditor,omitempty"`
-	WebMaster      string      `xml:"webMaster,omitempty"`
-	PubDate        string      `xml:"pubDate"`
-	LastBuildDate  string      `xml:"lastBuildDate"`
-	Category       string      `xml:"category,omitempty"`
-	Generator      string      `xml:"generator"`
-	Docs           string      `xml:"docs"`
-	TTL            int         `xml:"ttl"`
-	Image          *RSSImage   `xml:"image,omitempty"`
+	Title          string       `xml:"title"`
+	Link           string       `xml:"link"`
+	Description    string       `xml:"description"`
+	Language       string       `xml:"language"`
+	Copyright      string       `xml:"copyright,omitempty"`
+	ManagingEditor string       `xml:"managingEditor,omitempty"`
+	WebMaster      string       `xml:"webMaster,omitempty"`
+	PubDate        string       `xml:"pubDate"`
+	LastBuildDate  string       `xml:"lastBuildDate"`
+	Category       string       `xml:"category,omitempty"`
+	Generator      string       `xml:"generator"`
+	Docs           string       `xml:"docs"`
+	TTL            int          `xml:"ttl"`
+	Image          *RSSImage    `xml:"image,omitempty"`
 	AtomLink       *RSSAtomLink `xml:"atom:link,omitempty"`
-	Items          []RSSItem   `xml:"item"`
+	Items          []RSSItem    `xml:"item"`
 }
 
 type RSSImage struct {
@@ -47,17 +47,17 @@ type RSSImage struct {
 }
 
 type RSSItem struct {
-	Title          string `xml:"title"`
-	Link           string `xml:"link"`
-	Description    string `xml:"description"`
-	Author         string `xml:"author,omitempty"`
-	Category       string `xml:"category,omitempty"`
-	Comments       string `xml:"comments,omitempty"`
-	Enclosure      string `xml:"enclosure,omitempty"`
+	Title          string  `xml:"title"`
+	Link           string  `xml:"link"`
+	Description    string  `xml:"description"`
+	Author         string  `xml:"author,omitempty"`
+	Category       string  `xml:"category,omitempty"`
+	Comments       string  `xml:"comments,omitempty"`
+	Enclosure      string  `xml:"enclosure,omitempty"`
 	GUID           RSSGUID `xml:"guid"`
-	PubDate        string `xml:"pubDate"`
-	Source         string `xml:"source,omitempty"`
-	ContentEncoded string `xml:"content:encoded,omitempty"`
+	PubDate        string  `xml:"pubDate"`
+	Source         string  `xml:"source,omitempty"`
+	ContentEncoded string  `xml:"content:encoded,omitempty"`
 }
 
 type RSSGUID struct {
@@ -67,19 +67,19 @@ type RSSGUID struct {
 
 // Atom 1.0 Feed
 type AtomFeed struct {
-	XMLName   xml.Name    `xml:"feed"`
-	Xmlns     string      `xml:"xmlns,attr"`
-	Title     string      `xml:"title"`
-	Subtitle  string      `xml:"subtitle,omitempty"`
-	Link      []AtomLink  `xml:"link"`
-	Updated   string      `xml:"updated"`
-	ID        string      `xml:"id"`
-	Author    *AtomAuthor `xml:"author,omitempty"`
-	Rights    string      `xml:"rights,omitempty"`
+	XMLName   xml.Name       `xml:"feed"`
+	Xmlns     string         `xml:"xmlns,attr"`
+	Title     string         `xml:"title"`
+	Subtitle  string         `xml:"subtitle,omitempty"`
+	Link      []AtomLink     `xml:"link"`
+	Updated   string         `xml:"updated"`
+	ID        string         `xml:"id"`
+	Author    *AtomAuthor    `xml:"author,omitempty"`
+	Rights    string         `xml:"rights,omitempty"`
 	Generator *AtomGenerator `xml:"generator,omitempty"`
-	Icon      string      `xml:"icon,omitempty"`
-	Logo      string      `xml:"logo,omitempty"`
-	Entries   []AtomEntry `xml:"entry"`
+	Icon      string         `xml:"icon,omitempty"`
+	Logo      string         `xml:"logo,omitempty"`
+	Entries   []AtomEntry    `xml:"entry"`
 }
 
 // AtomLink for RSS feeds (used in atom:link)
@@ -110,14 +110,14 @@ type AtomGenerator struct {
 }
 
 type AtomEntry struct {
-	Title     string        `xml:"title"`
-	Link      []AtomLink    `xml:"link"`
-	ID        string        `xml:"id"`
-	Updated   string        `xml:"updated"`
-	Published string        `xml:"published"`
-	Author    *AtomAuthor   `xml:"author,omitempty"`
-	Summary   *AtomContent  `xml:"summary,omitempty"`
-	Content   *AtomContent  `xml:"content,omitempty"`
+	Title     string         `xml:"title"`
+	Link      []AtomLink     `xml:"link"`
+	ID        string         `xml:"id"`
+	Updated   string         `xml:"updated"`
+	Published string         `xml:"published"`
+	Author    *AtomAuthor    `xml:"author,omitempty"`
+	Summary   *AtomContent   `xml:"summary,omitempty"`
+	Content   *AtomContent   `xml:"content,omitempty"`
 	Category  []AtomCategory `xml:"category,omitempty"`
 }
 
@@ -134,20 +134,20 @@ type AtomCategory struct {
 
 // JSON Feed 1.1
 type JSONFeed struct {
-	Version     string          `json:"version"`
-	Title       string          `json:"title"`
-	HomePageURL string          `json:"home_page_url"`
-	FeedURL     string          `json:"feed_url"`
-	Description string          `json:"description,omitempty"`
-	UserComment string          `json:"user_comment,omitempty"`
-	NextURL     string          `json:"next_url,omitempty"`
-	Icon        string          `json:"icon,omitempty"`
-	Favicon     string          `json:"favicon,omitempty"`
-	Authors     []JSONAuthor    `json:"authors,omitempty"`
-	Language    string          `json:"language,omitempty"`
-	Expired     bool            `json:"expired,omitempty"`
-	Hubs        []JSONHub       `json:"hubs,omitempty"`
-	Items       []JSONFeedItem  `json:"items"`
+	Version     string         `json:"version"`
+	Title       string         `json:"title"`
+	HomePageURL string         `json:"home_page_url"`
+	FeedURL     string         `json:"feed_url"`
+	Description string         `json:"description,omitempty"`
+	UserComment string         `json:"user_comment,omitempty"`
+	NextURL     string         `json:"next_url,omitempty"`
+	Icon        string         `json:"icon,omitempty"`
+	Favicon     string         `json:"favicon,omitempty"`
+	Authors     []JSONAuthor   `json:"authors,omitempty"`
+	Language    string         `json:"language,omitempty"`
+	Expired     bool           `json:"expired,omitempty"`
+	Hubs        []JSONHub      `json:"hubs,omitempty"`
+	Items       []JSONFeedItem `json:"items"`
 }
 
 type JSONAuthor struct {
@@ -162,20 +162,20 @@ type JSONHub struct {
 }
 
 type JSONFeedItem struct {
-	ID            string       `json:"id"`
-	URL           string       `json:"url,omitempty"`
-	ExternalURL   string       `json:"external_url,omitempty"`
-	Title         string       `json:"title"`
-	ContentHTML   string       `json:"content_html,omitempty"`
-	ContentText   string       `json:"content_text,omitempty"`
-	Summary       string       `json:"summary,omitempty"`
-	Image         string       `json:"image,omitempty"`
-	BannerImage   string       `json:"banner_image,omitempty"`
-	DatePublished string       `json:"date_published"`
-	DateModified  string       `json:"date_modified,omitempty"`
-	Authors       []JSONAuthor `json:"authors,omitempty"`
-	Tags          []string     `json:"tags,omitempty"`
-	Language      string       `json:"language,omitempty"`
+	ID            string           `json:"id"`
+	URL           string           `json:"url,omitempty"`
+	ExternalURL   string           `json:"external_url,omitempty"`
+	Title         string           `json:"title"`
+	ContentHTML   string           `json:"content_html,omitempty"`
+	ContentText   string           `json:"content_text,omitempty"`
+	Summary       string           `json:"summary,omitempty"`
+	Image         string           `json:"image,omitempty"`
+	BannerImage   string           `json:"banner_image,omitempty"`
+	DatePublished string           `json:"date_published"`
+	DateModified  string           `json:"date_modified,omitempty"`
+	Authors       []JSONAuthor     `json:"authors,omitempty"`
+	Tags          []string         `json:"tags,omitempty"`
+	Language      string           `json:"language,omitempty"`
 	Attachments   []JSONAttachment `json:"attachments,omitempty"`
 }
 
@@ -247,12 +247,12 @@ func (fg *FeedGenerator) GenerateRSSWithStatus(incidents []storage.Incident, sta
 	// Add current status summary as first item if provided
 	if status != nil {
 		statusItem := RSSItem{
-			Title:       fg.formatStatusTitle(status),
-			Link:        fg.baseURL,
-			Description: fg.formatStatusDescription(status),
-			GUID:        RSSGUID{Value: fmt.Sprintf("%s/status/%s", fg.baseURL, now.Format("2006-01-02")), IsPermaLink: false},
-			PubDate:     now.Format(time.RFC1123Z),
-			Category:    "status",
+			Title:          fg.formatStatusTitle(status),
+			Link:           fg.baseURL,
+			Description:    fg.formatStatusDescription(status),
+			GUID:           RSSGUID{Value: fmt.Sprintf("%s/status/%s", fg.baseURL, now.Format("2006-01-02")), IsPermaLink: false},
+			PubDate:        now.Format(time.RFC1123Z),
+			Category:       "status",
 			ContentEncoded: fg.formatStatusHTML(status),
 		}
 		items = append(items, statusItem)
@@ -261,12 +261,12 @@ func (fg *FeedGenerator) GenerateRSSWithStatus(incidents []storage.Incident, sta
 	// Add incidents
 	for _, inc := range incidents {
 		item := RSSItem{
-			Title:       fg.formatIncidentTitle(inc),
-			Link:        fmt.Sprintf("%s/incidents/%s", fg.baseURL, inc.ID),
-			Description: fg.formatIncidentDescription(inc),
-			GUID:        RSSGUID{Value: fmt.Sprintf("urn:incident:%s", inc.ID), IsPermaLink: false},
-			PubDate:     inc.CreatedAt.Format(time.RFC1123Z),
-			Category:    fg.mapSeverityToCategory(inc.Severity),
+			Title:          fg.formatIncidentTitle(inc),
+			Link:           fmt.Sprintf("%s/incidents/%s", fg.baseURL, inc.ID),
+			Description:    fg.formatIncidentDescription(inc),
+			GUID:           RSSGUID{Value: fmt.Sprintf("urn:incident:%s", inc.ID), IsPermaLink: false},
+			PubDate:        inc.CreatedAt.Format(time.RFC1123Z),
+			Category:       fg.mapSeverityToCategory(inc.Severity),
 			ContentEncoded: fg.formatIncidentHTML(inc),
 		}
 		items = append(items, item)

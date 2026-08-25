@@ -30,6 +30,46 @@ spec:
           image: harbor.invinsense.dev/infra/status:3740dfc-prom
           imagePullPolicy: IfNotPresent
           args: ["-config", "/config.yaml"]
+          env:
+            # Alert-channel secrets stay out of the ConfigMap. Env always wins
+            # over config.yaml, so this is the one place to rotate them.
+            # optional: true keeps the pod schedulable before the secret exists.
+            - name: STATUS_NTFY_ENABLED
+              value: "true"
+            - name: STATUS_NTFY_SERVER
+              value: "http://ntfy.invinsense.svc.cluster.local"
+            - name: STATUS_NTFY_TOPIC
+              valueFrom:
+                secretKeyRef:
+                  name: status-alerts
+                  key: ntfy-topic
+                  optional: true
+            - name: STATUS_NTFY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: status-alerts
+                  key: ntfy-token
+                  optional: true
+            # VAPID keys for Web Push. Omit both and the pod generates a pair on
+            # first boot and persists it to /data — fine for a single replica.
+            - name: STATUS_VAPID_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: status-alerts
+                  key: vapid-public-key
+                  optional: true
+            - name: STATUS_VAPID_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: status-alerts
+                  key: vapid-private-key
+                  optional: true
+            - name: STATUS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: status-alerts
+                  key: api-key
+                  optional: true
           ports:
             - name: http
               containerPort: 8080
@@ -105,3 +145,27 @@ spec:
       port: 80
       targetPort: 8080
       protocol: TCP
+---
+# Alert-channel credentials. Create with real values before deploying:
+#
+#   kubectl -n invinsense create secret generic status-alerts \
+#     --from-literal=ntfy-topic="invinsense-alerts" \
+#     --from-literal=ntfy-token="tk_..." \
+#     --from-literal=api-key="$(openssl rand -hex 24)"
+#
+# VAPID keys are optional — leave them out and the pod mints a pair on first
+# boot. Supply them only when you need the same key across a rebuild, since
+# changing the public key invalidates every existing browser subscription.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: status-alerts
+  labels:
+    app: status
+type: Opaque
+stringData:
+  ntfy-topic: "invinsense-alerts"
+  ntfy-token: ""
+  vapid-public-key: ""
+  vapid-private-key: ""
+  api-key: ""

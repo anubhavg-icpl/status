@@ -98,6 +98,9 @@ type Server struct {
 	apiDocsTmpl  *template.Template
 	rl           *apiRateLimiter
 	rdb          *redis.Client // nil when Redis disabled
+	cluster      clusterCache
+	alerts       *alertTracker
+	clusterWatch *clusterWatcher
 }
 
 // NewServer creates a new web server instance
@@ -122,6 +125,8 @@ func NewServer(cfg *config.Config, mon *monitor.Monitor, store *storage.Storage,
 		cancel:  cancel,
 		rl:      newAPIRateLimiter(cfg.API.RateLimit),
 	}
+	s.alerts = newAlertTracker(cfg, notif)
+	s.clusterWatch = newClusterWatcher(cfg, notif)
 	if cfg.Redis.Enabled {
 		rdb := redis.NewClient(&redis.Options{
 			Addr:     cfg.Redis.Addr,
@@ -133,17 +138,20 @@ func NewServer(cfg *config.Config, mon *monitor.Monitor, store *storage.Storage,
 	return s
 }
 
-
 // Start starts the web server
 func (s *Server) Start() error {
-	// Parse templates once at startup
-	indexTmpl, err := template.ParseFS(templateFiles, "templates/index.html")
+	// Parse templates once at startup. Sprig gives operators the usual ~100
+	// helpers (date, default, upper, ternary, …) inside custom templates
+	// without us hand-rolling a FuncMap per need.
+	funcs := templateFuncs()
+
+	indexTmpl, err := template.New("index.html").Funcs(funcs).ParseFS(templateFiles, "templates/index.html")
 	if err != nil {
 		return fmt.Errorf("failed to parse index template: %w", err)
 	}
 	s.indexTmpl = indexTmpl
 
-	apiDocsTmpl, err := template.ParseFS(templateFiles, "templates/api.html")
+	apiDocsTmpl, err := template.New("api.html").Funcs(funcs).ParseFS(templateFiles, "templates/api.html")
 	if err != nil {
 		return fmt.Errorf("failed to parse api docs template: %w", err)
 	}
@@ -183,6 +191,19 @@ func (s *Server) Start() error {
 
 	// Metrics API
 	mux.HandleFunc("/api/metrics", s.withRateLimit(s.handleAPIMetrics))
+
+	// Kubernetes cluster snapshot (auth-gated unless cluster.public is set)
+	mux.HandleFunc("/api/cluster", s.withRateLimit(s.maybeAuth(!s.config.Cluster.Public, s.handleAPICluster)))
+
+	// Notification channels: Web Push registration + delivery self-test
+	mux.HandleFunc("/api/push/key", s.withRateLimit(s.handlePushKey))
+	mux.HandleFunc("/api/push/subscribe", s.withRateLimit(s.handlePushSubscribe))
+	mux.HandleFunc("/api/push/unsubscribe", s.withRateLimit(s.handlePushUnsubscribe))
+	mux.HandleFunc("/api/notifications", s.withRateLimit(s.handleNotificationChannels))
+	mux.HandleFunc("/api/notifications/test", s.withRateLimit(s.requireAuth(s.handleNotificationTest)))
+
+	// Service worker must be served from the site root to control the page.
+	mux.HandleFunc("/sw.js", s.handleServiceWorker)
 
 	// Prometheus scrape endpoint (no rate-limit — kube-prom will probe this)
 	mux.HandleFunc("/metrics", s.handlePrometheus)
@@ -227,6 +248,14 @@ func (s *Server) Start() error {
 
 	// Start daily history recorder
 	go s.recordDailyHistory(s.ctx)
+
+	// Watch the cluster for application-level failures across every namespace.
+	// Runs regardless of page views: an outage at 3am has no audience.
+	// Skipped without an in-cluster client, or every tick would just log a
+	// snapshot failure on a laptop.
+	if s.config.Cluster.Enabled && s.config.Alerts.Cluster.Enabled && s.monitor.K8s() != nil {
+		go s.clusterWatch.run(s.ctx, s.clusterSnapshot)
+	}
 
 	log.Printf("Starting server on http://localhost:%d", s.config.Server.Port)
 	return s.server.ListenAndServe()
@@ -481,18 +510,18 @@ type APIResponse struct {
 }
 
 type APIMeta struct {
-	Page       int    `json:"page,omitempty"`
-	PerPage    int    `json:"per_page,omitempty"`
-	Total      int    `json:"total,omitempty"`
+	Page        int    `json:"page,omitempty"`
+	PerPage     int    `json:"per_page,omitempty"`
+	Total       int    `json:"total,omitempty"`
 	GeneratedAt string `json:"generated_at"`
 }
 
 // Summary response like Cloudflare/GitHub
 type SummaryResponse struct {
-	Page       PageInfo       `json:"page"`
-	Status     StatusInfo     `json:"status"`
-	Components []ComponentInfo `json:"components"`
-	Incidents  []IncidentInfo  `json:"incidents"`
+	Page        PageInfo          `json:"page"`
+	Status      StatusInfo        `json:"status"`
+	Components  []ComponentInfo   `json:"components"`
+	Incidents   []IncidentInfo    `json:"incidents"`
 	Maintenance []MaintenanceInfo `json:"scheduled_maintenances"`
 }
 
@@ -520,16 +549,16 @@ type ComponentInfo struct {
 }
 
 type IncidentInfo struct {
-	ID               string        `json:"id"`
-	Name             string        `json:"name"`
-	Status           string        `json:"status"`
-	Impact           string        `json:"impact"`
-	CreatedAt        string        `json:"created_at"`
-	UpdatedAt        string        `json:"updated_at"`
-	ResolvedAt       string        `json:"resolved_at,omitempty"`
-	Shortlink        string        `json:"shortlink"`
-	AffectedComponents []string    `json:"affected_components"`
-	Updates          []UpdateInfo  `json:"incident_updates"`
+	ID                 string       `json:"id"`
+	Name               string       `json:"name"`
+	Status             string       `json:"status"`
+	Impact             string       `json:"impact"`
+	CreatedAt          string       `json:"created_at"`
+	UpdatedAt          string       `json:"updated_at"`
+	ResolvedAt         string       `json:"resolved_at,omitempty"`
+	Shortlink          string       `json:"shortlink"`
+	AffectedComponents []string     `json:"affected_components"`
+	Updates            []UpdateInfo `json:"incident_updates"`
 }
 
 type UpdateInfo struct {
@@ -540,11 +569,11 @@ type UpdateInfo struct {
 }
 
 type MaintenanceInfo struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	Status         string   `json:"status"`
-	ScheduledFor   string   `json:"scheduled_for"`
-	ScheduledUntil string   `json:"scheduled_until"`
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Status             string   `json:"status"`
+	ScheduledFor       string   `json:"scheduled_for"`
+	ScheduledUntil     string   `json:"scheduled_until"`
 	AffectedComponents []string `json:"affected_components"`
 }
 
@@ -1276,6 +1305,10 @@ func (s *Server) broadcastUpdates(ctx context.Context) {
 			if !ok {
 				return
 			}
+			// Turn the check stream into alerts before fanning out to browsers;
+			// the tracker decides whether this result is a real transition.
+			s.alerts.observe(status)
+
 			s.clientMu.RLock()
 			for client := range s.clients {
 				data := map[string]interface{}{

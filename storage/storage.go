@@ -19,6 +19,8 @@ var (
 	bucketMaintenance  = []byte("maintenance")
 	bucketHistory      = []byte("history")
 	bucketCheckHistory = []byte("check_history")
+	bucketPushSubs     = []byte("push_subscriptions")
+	bucketSettings     = []byte("settings")
 )
 
 // Storage handles persistent data storage using BoltDB
@@ -32,7 +34,7 @@ type Storage struct {
 type Incident struct {
 	ID               string           `json:"id"`
 	Title            string           `json:"title"`
-	Status           string           `json:"status"` // investigating, identified, monitoring, resolved
+	Status           string           `json:"status"`   // investigating, identified, monitoring, resolved
 	Severity         string           `json:"severity"` // minor, major, critical
 	Message          string           `json:"message"`
 	AffectedServices []string         `json:"affected_services"`
@@ -110,7 +112,10 @@ func NewStorage(dataDir string) (*Storage, error) {
 
 	// Create buckets
 	err = db.Update(func(tx *bolt.Tx) error {
-		buckets := [][]byte{bucketIncidents, bucketMaintenance, bucketHistory, bucketCheckHistory}
+		buckets := [][]byte{
+			bucketIncidents, bucketMaintenance, bucketHistory,
+			bucketCheckHistory, bucketPushSubs, bucketSettings,
+		}
 		for _, bucket := range buckets {
 			if _, err := tx.CreateBucketIfNotExists(bucket); err != nil {
 				return err

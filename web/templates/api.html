@@ -377,6 +377,8 @@
                         <a href="#incidents">Incidents</a>
                         <a href="#history">History</a>
                         <a href="#metrics">Metrics</a>
+                        <a href="#cluster">Kubernetes</a>
+                        <a href="#notifications">Notifications</a>
                     </div>
                 </div>
                 <div class="sidebar-section">
@@ -635,6 +637,114 @@ limit=50       # Max results</code></div>
   <span class="key">"average_response_ms"</span>: <span class="number">187</span>,
   <span class="key">"active_incidents"</span>: <span class="number">0</span>
 }</code></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Kubernetes -->
+                <section class="endpoint-section" id="cluster">
+                    <h2>Kubernetes</h2>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/api/cluster</span>
+                            <span class="endpoint-desc">Whole-cluster snapshot and firing issues</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <p>Nodes, workloads, namespaces, problem pods, warning events and
+                            storage, read from in-cluster informer caches. <code>issues</code>
+                            lists the failures currently firing, each with the time it started.</p>
+                            <p>Requires the API key unless <code>cluster.public: true</code>.
+                            Returns <code>{"enabled": false}</code> outside a cluster.</p>
+                            <h4>Response</h4>
+                            <div class="code-block"><code>{
+  <span class="key">"enabled"</span>: <span class="keyword">true</span>,
+  <span class="key">"snapshot"</span>: {
+    <span class="key">"version"</span>: <span class="string">"v1.31.4"</span>,
+    <span class="key">"summary"</span>: { <span class="key">"nodes_ready"</span>: <span class="number">2</span>, <span class="key">"nodes_total"</span>: <span class="number">3</span>, <span class="key">"pods_running"</span>: <span class="number">141</span> },
+    <span class="key">"nodes"</span>: [], <span class="key">"workloads"</span>: [], <span class="key">"namespaces"</span>: [],
+    <span class="key">"problems"</span>: [], <span class="key">"events"</span>: [], <span class="key">"storage"</span>: {}
+  },
+  <span class="key">"issues"</span>: [{
+    <span class="key">"key"</span>: <span class="string">"deployment/invinsense/uec-ingest/down"</span>,
+    <span class="key">"severity"</span>: <span class="string">"critical"</span>,
+    <span class="key">"reason"</span>: <span class="string">"NoReadyReplicas"</span>,
+    <span class="key">"duration_seconds"</span>: <span class="number">1320</span>,
+    <span class="key">"alerted"</span>: <span class="keyword">true</span>
+  }]
+}</code></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Notifications -->
+                <section class="endpoint-section" id="notifications">
+                    <h2>Notifications</h2>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/api/notifications</span>
+                            <span class="endpoint-desc">Which alert channels are live</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Response</h4>
+                            <div class="code-block"><code>{
+  <span class="key">"webhooks_enabled"</span>: <span class="number">2</span>,
+  <span class="key">"push_enabled"</span>: <span class="keyword">true</span>,
+  <span class="key">"push_subscriptions"</span>: <span class="number">14</span>,
+  <span class="key">"ntfy_enabled"</span>: <span class="keyword">true</span>,
+  <span class="key">"service_alerts_enabled"</span>: <span class="keyword">true</span>
+}</code></div>
+                        </div>
+                    </div>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/api/push/key</span>
+                            <span class="endpoint-desc">VAPID public key for pushManager.subscribe()</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <p>Public by design — the application server key is not a secret.</p>
+                        </div>
+                    </div>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method post">POST</span>
+                            <span class="endpoint-path">/api/push/subscribe</span>
+                            <span class="endpoint-desc">Register a browser for push alerts</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <p>Post the browser&rsquo;s <code>PushSubscription</code> verbatim.
+                            The endpoint must be <code>https://</code>. Re-subscribing from the same
+                            browser refreshes the record rather than duplicating it.</p>
+                            <h4>Request</h4>
+                            <div class="code-block"><code>{
+  <span class="key">"endpoint"</span>: <span class="string">"https://fcm.googleapis.com/fcm/send/..."</span>,
+  <span class="key">"keys"</span>: { <span class="key">"p256dh"</span>: <span class="string">"..."</span>, <span class="key">"auth"</span>: <span class="string">"..."</span> },
+  <span class="key">"topics"</span>: [<span class="string">"service"</span>, <span class="string">"incident.created"</span>]
+}</code></div>
+                        </div>
+                    </div>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method post">POST</span>
+                            <span class="endpoint-path">/api/push/unsubscribe</span>
+                            <span class="endpoint-desc">Drop a browser endpoint</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <h4>Request</h4>
+                            <div class="code-block"><code>{ <span class="key">"endpoint"</span>: <span class="string">"https://..."</span> }</code></div>
+                        </div>
+                    </div>
+                    <div class="endpoint" onclick="this.classList.toggle('open')">
+                        <div class="endpoint-header">
+                            <span class="method post">POST</span>
+                            <span class="endpoint-path">/api/notifications/test</span>
+                            <span class="endpoint-desc">Fire a test alert on every channel</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <p>Requires the API key: it rings real devices and spends real push quota.
+                            Use it once after setup to confirm your phone actually buzzes.</p>
                         </div>
                     </div>
                 </section>

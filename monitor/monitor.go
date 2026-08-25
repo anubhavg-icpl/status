@@ -31,17 +31,17 @@ const (
 
 // ServiceStatus holds the current state of a monitored service
 type ServiceStatus struct {
-	Name           string        `json:"name"`
-	Group          string        `json:"group"`
-	URL            string        `json:"url"`
-	Description    string        `json:"description"`
-	Status         Status        `json:"status"`
-	ResponseTime   time.Duration `json:"response_time"`
-	ResponseTimeMs int64         `json:"response_time_ms"`
-	StatusCode     int           `json:"status_code"`
-	LastCheck      time.Time     `json:"last_check"`
-	Uptime         float64       `json:"uptime"` // percentage
-	ErrorMessage   string        `json:"error_message,omitempty"`
+	Name           string         `json:"name"`
+	Group          string         `json:"group"`
+	URL            string         `json:"url"`
+	Description    string         `json:"description"`
+	Status         Status         `json:"status"`
+	ResponseTime   time.Duration  `json:"response_time"`
+	ResponseTimeMs int64          `json:"response_time_ms"`
+	StatusCode     int            `json:"status_code"`
+	LastCheck      time.Time      `json:"last_check"`
+	Uptime         float64        `json:"uptime"` // percentage
+	ErrorMessage   string         `json:"error_message,omitempty"`
 	History        []HistoryPoint `json:"history"`
 }
 
@@ -74,6 +74,12 @@ type Monitor struct {
 // Must be called before Start() if any k8s_* services are configured.
 func (m *Monitor) SetK8sClient(c *k8sclient.Client) {
 	m.k8s = c
+}
+
+// K8s returns the in-cluster client, or nil when the process is not running
+// inside a cluster. Callers must nil-check before use.
+func (m *Monitor) K8s() *k8sclient.Client {
+	return m.k8s
 }
 
 // NewMonitor creates a new monitor instance
@@ -837,11 +843,11 @@ func (m *Monitor) checkQUIC(svc config.Service) {
 	// This is a minimal QUIC version negotiation probe
 	// Real QUIC would require full crypto handshake
 	quicProbe := []byte{
-		0xc0,             // Long header, fixed bit
+		0xc0,                   // Long header, fixed bit
 		0x00, 0x00, 0x00, 0x01, // Version (QUIC v1)
-		0x08,             // DCID length
+		0x08,                                           // DCID length
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // DCID (random)
-		0x00,             // SCID length
+		0x00, // SCID length
 	}
 
 	_, err = conn.Write(quicProbe)

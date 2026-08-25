@@ -22,6 +22,8 @@ type Config struct {
 	Storage     StorageConfig   `yaml:"storage"`
 	API         APIConfig       `yaml:"api"`
 	Redis       RedisConfig     `yaml:"redis"`
+	Alerts      AlertsConfig    `yaml:"alerts"`
+	Cluster     ClusterConfig   `yaml:"cluster"`
 }
 
 // StorageConfig holds storage settings
@@ -31,12 +33,12 @@ type StorageConfig struct {
 
 // APIConfig holds API settings
 type APIConfig struct {
-	Enabled      bool     `yaml:"enabled"`
-	Key          string   `yaml:"key"`           // API key (X-API-Key header)
-	BearerToken  string   `yaml:"bearer_token"`  // Bearer token auth
-	BasicAuth    BasicAuth `yaml:"basic_auth"`   // Basic auth
-	AllowedIPs   []string `yaml:"allowed_ips"`   // IP whitelist
-	RateLimit    int      `yaml:"rate_limit"`
+	Enabled     bool      `yaml:"enabled"`
+	Key         string    `yaml:"key"`          // API key (X-API-Key header)
+	BearerToken string    `yaml:"bearer_token"` // Bearer token auth
+	BasicAuth   BasicAuth `yaml:"basic_auth"`   // Basic auth
+	AllowedIPs  []string  `yaml:"allowed_ips"`  // IP whitelist
+	RateLimit   int       `yaml:"rate_limit"`
 }
 
 // RedisConfig holds optional Redis settings for multi-replica support
@@ -67,9 +69,9 @@ type WebhookConfig struct {
 
 // ThemeConfig holds theme customization
 type ThemeConfig struct {
-	PrimaryColor   string `yaml:"primary_color"`
-	AccentColor    string `yaml:"accent_color"`
-	DarkMode       bool   `yaml:"dark_mode"`
+	PrimaryColor string `yaml:"primary_color"`
+	AccentColor  string `yaml:"accent_color"`
+	DarkMode     bool   `yaml:"dark_mode"`
 }
 
 // ServerConfig holds HTTP server settings
@@ -93,7 +95,7 @@ const (
 	CheckQUIC      CheckType = "quic"
 	CheckSMTP      CheckType = "smtp"
 	CheckSSH       CheckType = "ssh"
-	CheckTLS       CheckType = "tls"  // TLS certificate validation
+	CheckTLS       CheckType = "tls" // TLS certificate validation
 	CheckPOP3      CheckType = "pop3"
 	CheckIMAP      CheckType = "imap"
 	CheckFTP       CheckType = "ftp"
@@ -111,49 +113,49 @@ const (
 	CheckK8sDeployment  CheckType = "k8s_deployment"  // readyReplicas vs spec
 	CheckK8sStatefulSet CheckType = "k8s_statefulset"
 	CheckK8sDaemonSet   CheckType = "k8s_daemonset"
-	CheckK8sPodsCrash   CheckType = "k8s_pods_crash"  // CrashLoop count in ns
-	CheckK8sPVC         CheckType = "k8s_pvc"         // PVC bound state
-	CheckK8sEvents      CheckType = "k8s_events"      // Warning event rate
-	CheckK8sHPA         CheckType = "k8s_hpa"         // HPA current vs desired
-	CheckK8sCronJob     CheckType = "k8s_cronjob"     // last success age
+	CheckK8sPodsCrash   CheckType = "k8s_pods_crash" // CrashLoop count in ns
+	CheckK8sPVC         CheckType = "k8s_pvc"        // PVC bound state
+	CheckK8sEvents      CheckType = "k8s_events"     // Warning event rate
+	CheckK8sHPA         CheckType = "k8s_hpa"        // HPA current vs desired
+	CheckK8sCronJob     CheckType = "k8s_cronjob"    // last success age
 )
 
 // Service represents a monitored service
 type Service struct {
 	Name           string            `yaml:"name"`
 	Group          string            `yaml:"group"`
-	Type           CheckType         `yaml:"type"`           // http, tcp, icmp, dns, websocket, grpc
-	URL            string            `yaml:"url"`            // For HTTP/WebSocket/gRPC
-	Host           string            `yaml:"host"`           // For TCP/ICMP/DNS
-	Port           int               `yaml:"port"`           // For TCP/gRPC
-	Method         string            `yaml:"method"`         // HTTP method
+	Type           CheckType         `yaml:"type"`   // http, tcp, icmp, dns, websocket, grpc
+	URL            string            `yaml:"url"`    // For HTTP/WebSocket/gRPC
+	Host           string            `yaml:"host"`   // For TCP/ICMP/DNS
+	Port           int               `yaml:"port"`   // For TCP/gRPC
+	Method         string            `yaml:"method"` // HTTP method
 	Interval       time.Duration     `yaml:"interval"`
 	Timeout        time.Duration     `yaml:"timeout"`
 	Headers        map[string]string `yaml:"headers"`
 	ExpectedStatus int               `yaml:"expected_status"`
 	Description    string            `yaml:"description"`
 	// DNS specific
-	DNSRecordType  string            `yaml:"dns_record_type"` // A, AAAA, CNAME, MX, TXT
-	DNSResolver    string            `yaml:"dns_resolver"`    // Custom DNS resolver
+	DNSRecordType string `yaml:"dns_record_type"` // A, AAAA, CNAME, MX, TXT
+	DNSResolver   string `yaml:"dns_resolver"`    // Custom DNS resolver
 	// TLS options
-	SkipTLSVerify  bool              `yaml:"skip_tls_verify"`
+	SkipTLSVerify bool `yaml:"skip_tls_verify"`
 	// Body validation
-	ExpectedBody   string            `yaml:"expected_body"`   // String to find in response
+	ExpectedBody string `yaml:"expected_body"` // String to find in response
 	// UDP specific
-	UDPPayload     string            `yaml:"udp_payload"`     // Payload to send for UDP check
-	UDPExpected    string            `yaml:"udp_expected"`    // Expected response pattern
+	UDPPayload  string `yaml:"udp_payload"`  // Payload to send for UDP check
+	UDPExpected string `yaml:"udp_expected"` // Expected response pattern
 	// QUIC specific (HTTP/3)
-	QUICALPN       []string          `yaml:"quic_alpn"`       // ALPN protocols (h3, h3-29, etc.)
+	QUICALPN []string `yaml:"quic_alpn"` // ALPN protocols (h3, h3-29, etc.)
 	// TLS Certificate check
-	TLSWarnDays    int               `yaml:"tls_warn_days"`   // Days before expiry to warn (default 30)
+	TLSWarnDays int `yaml:"tls_warn_days"` // Days before expiry to warn (default 30)
 	// Database connection strings
-	ConnectionString string          `yaml:"connection_string"` // For database checks
+	ConnectionString string `yaml:"connection_string"` // For database checks
 	// SMTP/Email specific
-	SMTPStartTLS   bool              `yaml:"smtp_starttls"`   // Use STARTTLS
-	SMTPAuth       bool              `yaml:"smtp_auth"`       // Require auth response
+	SMTPStartTLS bool `yaml:"smtp_starttls"` // Use STARTTLS
+	SMTPAuth     bool `yaml:"smtp_auth"`     // Require auth response
 	// Auth (Redis/MongoDB/etc.)
-	Username       string            `yaml:"username"`
-	Password       string            `yaml:"password"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 
 	// Kubernetes probe selectors
 	K8sNamespace     string  `yaml:"k8s_namespace"`      // target namespace
@@ -168,16 +170,16 @@ type Service struct {
 
 // Incident represents a past or ongoing incident
 type Incident struct {
-	ID          string    `yaml:"id"`
-	Title       string    `yaml:"title"`
-	Description string    `yaml:"description"`
-	Status      string    `yaml:"status"` // investigating, identified, monitoring, resolved
-	Severity    string    `yaml:"severity"` // minor, major, critical
-	CreatedAt   time.Time `yaml:"created_at"`
-	UpdatedAt   time.Time `yaml:"updated_at"`
-	ResolvedAt  *time.Time `yaml:"resolved_at"`
-	AffectedServices []string `yaml:"affected_services"`
-	Updates     []IncidentUpdate `yaml:"updates"`
+	ID               string           `yaml:"id"`
+	Title            string           `yaml:"title"`
+	Description      string           `yaml:"description"`
+	Status           string           `yaml:"status"`   // investigating, identified, monitoring, resolved
+	Severity         string           `yaml:"severity"` // minor, major, critical
+	CreatedAt        time.Time        `yaml:"created_at"`
+	UpdatedAt        time.Time        `yaml:"updated_at"`
+	ResolvedAt       *time.Time       `yaml:"resolved_at"`
+	AffectedServices []string         `yaml:"affected_services"`
+	Updates          []IncidentUpdate `yaml:"updates"`
 }
 
 // IncidentUpdate represents an update to an incident
@@ -187,8 +189,16 @@ type IncidentUpdate struct {
 	Timestamp time.Time `yaml:"timestamp"`
 }
 
-// DefaultConfig returns a configuration with sensible defaults
+// DefaultConfig returns a configuration with sensible defaults. Env overrides
+// are applied here too, so the no-config-file fallback path in main still
+// picks up secrets injected by Kubernetes.
 func DefaultConfig() *Config {
+	cfg := defaultConfig()
+	cfg.applyEnvOverrides()
+	return cfg
+}
+
+func defaultConfig() *Config {
 	return &Config{
 		Title:       "System Status",
 		Description: "Real-time system status and uptime monitoring",
@@ -216,12 +226,14 @@ func DefaultConfig() *Config {
 		},
 		Services: []Service{},
 		Webhooks: []WebhookConfig{},
+		Alerts:   defaultAlerts(),
+		Cluster:  defaultCluster(),
 	}
 }
 
 // Load reads configuration from a YAML file
 func Load(path string) (*Config, error) {
-	cfg := DefaultConfig()
+	cfg := defaultConfig()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -257,6 +269,9 @@ func Load(path string) (*Config, error) {
 			cfg.Services[i].DNSResolver = "8.8.8.8:53"
 		}
 	}
+
+	cfg.applyAlertDefaults()
+	cfg.applyEnvOverrides()
 
 	return cfg, nil
 }

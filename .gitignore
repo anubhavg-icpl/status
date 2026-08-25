@@ -13,3 +13,15 @@ __pycache__/
 # OS
 .DS_Store
 k8s/testing.yaml
+
+# Agent tooling artifacts (ruflo / claude-flow / swarm)
+.claude-flow/
+.swarm/
+agentdb.rvf
+agentdb.rvf.lock
+ruvector.db
+.claude/proven-config.json
+.claude/.proven-config-version
+
+# Local runtime data
+data/*.db

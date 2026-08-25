@@ -19,6 +19,8 @@ type Notifier struct {
 	mu          sync.RWMutex
 	client      *http.Client
 	webhookSem  chan struct{}
+	push        *PushManager
+	ntfy        *NtfySender
 }
 
 // WebhookConfig represents a webhook configuration
@@ -26,7 +28,7 @@ type WebhookConfig struct {
 	ID      string            `json:"id" yaml:"id"`
 	Name    string            `json:"name" yaml:"name"`
 	URL     string            `json:"url" yaml:"url"`
-	Type    string            `json:"type" yaml:"type"` // generic, slack, discord, teams, pagerduty
+	Type    string            `json:"type" yaml:"type"`     // generic, slack, discord, teams, pagerduty
 	Events  []string          `json:"events" yaml:"events"` // incident.created, incident.updated, incident.resolved, maintenance.scheduled
 	Headers map[string]string `json:"headers" yaml:"headers"`
 	Enabled bool              `json:"enabled" yaml:"enabled"`
@@ -56,13 +58,13 @@ type SlackPayload struct {
 }
 
 type SlackAttachment struct {
-	Color      string       `json:"color"`
-	Title      string       `json:"title"`
-	TitleLink  string       `json:"title_link,omitempty"`
-	Text       string       `json:"text"`
-	Fields     []SlackField `json:"fields,omitempty"`
-	Footer     string       `json:"footer,omitempty"`
-	Ts         int64        `json:"ts,omitempty"`
+	Color     string       `json:"color"`
+	Title     string       `json:"title"`
+	TitleLink string       `json:"title_link,omitempty"`
+	Text      string       `json:"text"`
+	Fields    []SlackField `json:"fields,omitempty"`
+	Footer    string       `json:"footer,omitempty"`
+	Ts        int64        `json:"ts,omitempty"`
 }
 
 type SlackField struct {
@@ -78,13 +80,13 @@ type DiscordPayload struct {
 }
 
 type DiscordEmbed struct {
-	Title       string               `json:"title"`
-	Description string               `json:"description"`
-	URL         string               `json:"url,omitempty"`
-	Color       int                  `json:"color"`
-	Fields      []DiscordEmbedField  `json:"fields,omitempty"`
-	Timestamp   string               `json:"timestamp,omitempty"`
-	Footer      *DiscordEmbedFooter  `json:"footer,omitempty"`
+	Title       string              `json:"title"`
+	Description string              `json:"description"`
+	URL         string              `json:"url,omitempty"`
+	Color       int                 `json:"color"`
+	Fields      []DiscordEmbedField `json:"fields,omitempty"`
+	Timestamp   string              `json:"timestamp,omitempty"`
+	Footer      *DiscordEmbedFooter `json:"footer,omitempty"`
 }
 
 type DiscordEmbedField struct {
@@ -162,22 +164,28 @@ func (n *Notifier) AddWebhook(webhook WebhookConfig) {
 
 // NotifyIncidentCreated notifies about a new incident
 func (n *Notifier) NotifyIncidentCreated(incident storage.Incident, baseURL string) {
-	n.notify("incident.created", incident, baseURL)
+	n.dispatch(EventIncidentCreated, emojifyIncident(incident), baseURL)
 }
 
 // NotifyIncidentUpdated notifies about an incident update
 func (n *Notifier) NotifyIncidentUpdated(incident storage.Incident, baseURL string) {
-	n.notify("incident.updated", incident, baseURL)
+	n.dispatch(EventIncidentUpdated, emojifyIncident(incident), baseURL)
 }
 
 // NotifyIncidentResolved notifies about a resolved incident
 func (n *Notifier) NotifyIncidentResolved(incident storage.Incident, baseURL string) {
-	n.notify("incident.resolved", incident, baseURL)
+	n.dispatch(EventIncidentResolved, emojifyIncident(incident), baseURL)
 }
 
 // NotifyMaintenanceScheduled notifies about scheduled maintenance
 func (n *Notifier) NotifyMaintenanceScheduled(maintenance storage.Maintenance, baseURL string) {
-	n.notify("maintenance.scheduled", maintenance, baseURL)
+	n.dispatch(EventMaintenanceSchedule, emojifyMaintenance(maintenance), baseURL)
+}
+
+// NotifyServiceAlert notifies every channel that a monitored service changed
+// state. This is the path that reaches an operator's phone.
+func (n *Notifier) NotifyServiceAlert(alert ServiceAlert, baseURL string) {
+	n.dispatch(alert.Event(), alert, baseURL)
 }
 
 func (n *Notifier) notify(event string, data interface{}, baseURL string) {
@@ -318,6 +326,22 @@ func (n *Notifier) formatSlackPayload(event string, data interface{}, baseURL st
 			Footer: "Status Monitor",
 			Ts:     v.CreatedAt.Unix(),
 		}
+
+	case ServiceAlert:
+		attachment = SlackAttachment{
+			Color:     n.severityToColor(SeverityFor(v.Status)),
+			Title:     StatusEmoji(v.Status) + " " + v.Title(),
+			TitleLink: baseURL,
+			Text:      v.Message,
+			Fields: []SlackField{
+				{Title: "Status", Value: v.Status, Short: true},
+				{Title: "Group", Value: dashIfEmpty(v.Group), Short: true},
+				{Title: "Response", Value: fmt.Sprintf("%dms", v.ResponseTimeMs), Short: true},
+				{Title: "Uptime", Value: fmt.Sprintf("%.2f%%", v.Uptime), Short: true},
+			},
+			Footer: "Status Monitor",
+			Ts:     v.OccurredAt.Unix(),
+		}
 	}
 
 	return json.Marshal(SlackPayload{
@@ -362,6 +386,22 @@ func (n *Notifier) formatDiscordPayload(event string, data interface{}, baseURL 
 				{Name: "End", Value: v.ScheduledEnd.Format("Jan 02, 2006 15:04 MST"), Inline: true},
 			},
 			Timestamp: v.CreatedAt.Format(time.RFC3339),
+			Footer:    &DiscordEmbedFooter{Text: "Status Monitor"},
+		}
+
+	case ServiceAlert:
+		embed = DiscordEmbed{
+			Title:       StatusEmoji(v.Status) + " " + v.Title(),
+			Description: dashIfEmpty(v.Message),
+			URL:         baseURL,
+			Color:       n.severityToDiscordColor(SeverityFor(v.Status)),
+			Fields: []DiscordEmbedField{
+				{Name: "Status", Value: v.Status, Inline: true},
+				{Name: "Group", Value: dashIfEmpty(v.Group), Inline: true},
+				{Name: "Response", Value: fmt.Sprintf("%dms", v.ResponseTimeMs), Inline: true},
+				{Name: "Uptime", Value: fmt.Sprintf("%.2f%%", v.Uptime), Inline: true},
+			},
+			Timestamp: v.OccurredAt.Format(time.RFC3339),
 			Footer:    &DiscordEmbedFooter{Text: "Status Monitor"},
 		}
 	}
@@ -441,6 +481,21 @@ func (n *Notifier) formatMSTeamsPayload(event string, data interface{}, baseURL 
 			},
 			Markdown: true,
 		}
+
+	case ServiceAlert:
+		themeColor = n.severityToTeamsColor(SeverityFor(v.Status))
+		summary = v.Title()
+		section = MSTeamsSection{
+			ActivityTitle:    StatusEmoji(v.Status) + " " + v.Title(),
+			ActivitySubtitle: dashIfEmpty(v.Group),
+			Facts: []MSTeamsFact{
+				{Name: "Status", Value: v.Status},
+				{Name: "Response", Value: fmt.Sprintf("%dms", v.ResponseTimeMs)},
+				{Name: "Uptime", Value: fmt.Sprintf("%.2f%%", v.Uptime)},
+				{Name: "Detail", Value: dashIfEmpty(v.Message)},
+			},
+			Markdown: true,
+		}
 	}
 
 	return json.Marshal(MSTeamsPayload{
@@ -484,11 +539,23 @@ func (n *Notifier) formatPagerDutyPayload(event string, data interface{}, webhoo
 		severity = n.severityToPagerDuty(v.Severity)
 
 		switch event {
-		case "incident.created":
+		case EventIncidentCreated:
 			eventAction = "trigger"
-		case "incident.resolved":
+		case EventIncidentResolved:
 			eventAction = "resolve"
 		default:
+			eventAction = "trigger"
+		}
+
+	case ServiceAlert:
+		// Dedup on the service name so PagerDuty auto-resolves the same alert
+		// it opened when the service comes back.
+		dedupKey = "service:" + v.Service
+		summary = fmt.Sprintf("%s: %s", v.Title(), v.Body())
+		severity = n.severityToPagerDuty(SeverityFor(v.Status))
+		if v.Status == "operational" {
+			eventAction = "resolve"
+		} else {
 			eventAction = "trigger"
 		}
 	}
@@ -528,6 +595,14 @@ func (n *Notifier) formatOpsgeniePayload(event string, data interface{}) ([]byte
 			Description: v.Message,
 			Priority:    n.severityToOpsgenie(v.Severity),
 			Tags:        append([]string{v.Status, v.Severity}, v.AffectedServices...),
+		})
+
+	case ServiceAlert:
+		return json.Marshal(OpsgeniePayload{
+			Message:     v.Title(),
+			Description: v.Body(),
+			Priority:    n.severityToOpsgenie(SeverityFor(v.Status)),
+			Tags:        []string{"service", v.Status, dashIfEmpty(v.Group)},
 		})
 	}
 

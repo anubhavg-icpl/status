@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"time"
 
-	corev1listers "k8s.io/client-go/listers/core/v1"
 	appsv1listers "k8s.io/client-go/listers/apps/v1"
 	autoscalingv2listers "k8s.io/client-go/listers/autoscaling/v2"
 	batchv1listers "k8s.io/client-go/listers/batch/v1"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -24,9 +24,11 @@ import (
 // Client bundles the typed clientset, metrics-server client, and a primed
 // SharedInformerFactory with listers for every resource the probes need.
 type Client struct {
-	Config    *rest.Config
-	Clientset *kubernetes.Clientset
-	Metrics   *metricsclient.Clientset
+	Config *rest.Config
+	// Interfaces rather than concrete clientsets: the whole-cluster Snapshot
+	// is worth testing, and that needs fakes to be substitutable here.
+	Clientset kubernetes.Interface
+	Metrics   metricsclient.Interface
 
 	Factory informers.SharedInformerFactory
 

@@ -33,6 +33,76 @@ redis:
 
 webhooks: []
 
+# =============================================================================
+# Alerting — service state changes reach webhooks, browsers and phones.
+# Secrets belong in env (STATUS_NTFY_TOPIC, STATUS_NTFY_TOKEN, STATUS_VAPID_*),
+# which always override anything set here.
+# =============================================================================
+alerts:
+  enabled: true
+  # Consecutive failing checks before the first alert. Raise on flaky networks.
+  failure_threshold: 2
+  # Minimum gap between two alerts for the same service.
+  cooldown: 5m
+  # Re-alert while a service stays down. 0 = only notify on the transitions.
+  repeat_every: 30m
+  # Restrict alerting to specific groups. Empty = every group.
+  only_groups: []
+
+  # Browser + phone notifications over the Web Push protocol (VAPID).
+  # Leave the keys blank: a pair is generated on first boot and persisted in
+  # BoltDB, so existing subscriptions survive restarts.
+  push:
+    enabled: true
+    subject: "mailto:ops@invinsense.local"
+    public_key: ""
+    private_key: ""
+    ttl: 86400
+    urgency: high
+
+  # ntfy: phone alerts with no app-store account and no FCM credentials.
+  # Install the ntfy app, subscribe to the topic, done.
+  ntfy:
+    enabled: false
+    server_url: "https://ntfy.sh"
+    topic: ""            # treat as a secret on the public server
+    token: ""            # tk_… access token, or use username/password
+    username: ""
+    password: ""
+    priority: high
+    critical_priority: max
+    call: ""             # phone number for a voice call on critical alerts
+    email: ""            # forward alerts to this address
+    events: []           # empty = all; e.g. ["service", "incident.created"]
+
+  # Kubernetes error detection. Reconciles the cluster on a timer and alerts on
+  # failures that persist — crashing pods, unschedulable workloads, NotReady
+  # nodes, unbound volumes — in every namespace at once.
+  cluster:
+    enabled: true
+    # Detection latency is at most one interval.
+    interval: 30s
+    # A failure must persist this long before it pages anyone. This is what
+    # separates a rolling deploy from an outage.
+    min_duration: 2m
+    # minor | major | critical. Everything is still shown on the page; this
+    # only controls what reaches a phone.
+    min_severity: major
+    ignore_namespaces: []
+    only_namespaces: []
+    max_tracked: 500
+
+# =============================================================================
+# Kubernetes cluster view — nodes, workloads, namespaces, problem pods and
+# warning events, read straight from the informer caches.
+# =============================================================================
+cluster:
+  enabled: true
+  # public: false keeps /api/cluster behind the API key. Node names, images and
+  # namespaces are internal topology — do not expose them on a public page.
+  public: false
+  cache_ttl: 10s
+
 services:
 
   # ============================ Invinsense Core ============================

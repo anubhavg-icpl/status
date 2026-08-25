@@ -67,25 +67,25 @@ func main() {
 				Description:    "Public website",
 			},
 			{
-				Name:           "Database",
-				Group:          "Infrastructure",
-				Type:           config.CheckTCP,
-				Host:           "github.com",
-				Port:           443,
-				Interval:       30 * time.Second,
-				Timeout:        5 * time.Second,
-				Description:    "Primary database cluster",
+				Name:        "Database",
+				Group:       "Infrastructure",
+				Type:        config.CheckTCP,
+				Host:        "github.com",
+				Port:        443,
+				Interval:    30 * time.Second,
+				Timeout:     5 * time.Second,
+				Description: "Primary database cluster",
 			},
 			{
-				Name:           "DNS",
-				Group:          "Infrastructure",
-				Type:           config.CheckDNS,
-				Host:           "github.com",
-				DNSRecordType:  "A",
-				DNSResolver:    "8.8.8.8:53",
-				Interval:       60 * time.Second,
-				Timeout:        5 * time.Second,
-				Description:    "DNS resolution",
+				Name:          "DNS",
+				Group:         "Infrastructure",
+				Type:          config.CheckDNS,
+				Host:          "github.com",
+				DNSRecordType: "A",
+				DNSResolver:   "8.8.8.8:53",
+				Interval:      60 * time.Second,
+				Timeout:       5 * time.Second,
+				Description:   "DNS resolution",
 			},
 			{
 				Name:           "CDN",
@@ -145,6 +145,31 @@ func main() {
 	}
 	notifier := notify.NewNotifier(webhookConfigs)
 	log.Printf("Webhooks configured: %d", len(webhookConfigs))
+
+	// Web Push (browser + phone). Keys are generated and persisted on first
+	// boot when none are supplied, so enabling push needs no manual setup.
+	pushMgr, err := notify.NewPushManager(store, cfg.Alerts.Push)
+	if err != nil {
+		log.Printf("web push disabled: %v", err)
+	}
+	notifier.SetPushManager(pushMgr)
+	if pushMgr.Enabled() {
+		log.Printf("Web push enabled (%d subscriptions, subject=%s)", pushMgr.Count(), cfg.Alerts.Push.Subject)
+	}
+
+	// ntfy: phone alerts without an app store account or FCM credentials.
+	ntfySender, err := notify.NewNtfySender(cfg.Alerts.Ntfy)
+	if err != nil {
+		log.Printf("ntfy disabled: %v", err)
+	}
+	notifier.SetNtfySender(ntfySender)
+	if ntfySender.Enabled() {
+		log.Printf("ntfy enabled (server=%s)", cfg.Alerts.Ntfy.ServerURL)
+	}
+	if cfg.Alerts.Enabled {
+		log.Printf("Service alerts on: threshold=%d cooldown=%s repeat=%s",
+			cfg.Alerts.FailureThreshold, cfg.Alerts.Cooldown, cfg.Alerts.RepeatEvery)
+	}
 
 	// Initialize k8s client + informers when any k8s_* probe is configured OR
 	// when auto-discovery is requested. Auto-discovery is enabled by default
@@ -235,6 +260,11 @@ func main() {
 	log.Println("  GET  /api/maintenance     - Scheduled maintenance")
 	log.Println("  GET  /api/history         - 90-day history")
 	log.Println("  GET  /api/metrics         - System metrics")
+	log.Println("  GET  /api/cluster         - Kubernetes cluster snapshot")
+	log.Println("  GET  /api/push/key        - VAPID public key")
+	log.Println("  POST /api/push/subscribe  - Register for push alerts")
+	log.Println("  GET  /api/notifications   - Notification channel status")
+	log.Println("  POST /api/notifications/test - Fire a test alert (requires API key)")
 	log.Println("  GET  /feed/rss            - RSS feed")
 	log.Println("  GET  /feed/atom           - Atom feed")
 	log.Println("  GET  /feed/json           - JSON feed")

@@ -7,7 +7,39 @@ ContainerPort:
     servicePort: 80
     supportStreaming: false
     useHTTP2: false
-EnvVariables: []
+EnvVariables:
+  # Non-secret alert settings. Env always wins over config.yaml, so this is the
+  # single place to flip alerting per environment without rebuilding the image.
+  - name: STATUS_ALERTS_ENABLED
+    value: "true"
+  - name: STATUS_CLUSTER_ENABLED
+    value: "true"
+  - name: STATUS_CLUSTER_ALERTS_ENABLED
+    value: "true"
+  - name: STATUS_CLUSTER_MIN_SEVERITY
+    value: "major"
+  - name: STATUS_PUSH_ENABLED
+    value: "true"
+  - name: STATUS_NTFY_ENABLED
+    value: "true"
+  - name: STATUS_NTFY_SERVER
+    value: "http://ntfy.invinsense.svc.cluster.local"
+# Credentials come from the existing `status-alerts` Secret (see k8s/status.yaml)
+# rather than being baked into these values. Keys consumed:
+#   ntfy-topic, ntfy-token, vapid-public-key, vapid-private-key, api-key
+# Devtron maps them to env vars of the same UPPER_SNAKE names via the secret's
+# own keys, so create it with the STATUS_* names when using this path:
+#   kubectl -n invinsense create secret generic status-alerts-env \
+#     --from-literal=STATUS_NTFY_TOPIC=invinsense-alerts \
+#     --from-literal=STATUS_NTFY_TOKEN=tk_... \
+#     --from-literal=STATUS_API_KEY="$(openssl rand -hex 24)"
+ConfigSecrets:
+  enabled: true
+  secrets:
+    - name: status-alerts-env
+      type: environment
+      external: true
+      externalType: KubernetesSecret
 GracePeriod: 30
 LivenessProbe:
   Path: /healthz
@@ -22,8 +54,10 @@ LivenessProbe:
   successThreshold: 1
   tcp: false
   timeoutSeconds: 5
-MaxSurge: 1
-MaxUnavailable: 0
+# Surge 0 / unavailable 1: the data PVC is ReadWriteOnce, so a surge pod could
+# never attach the volume and the rollout would hang. The old pod must go first.
+MaxSurge: 0
+MaxUnavailable: 1
 MinReadySeconds: 60
 ReadinessProbe:
   Path: /healthz
@@ -88,9 +122,14 @@ args:
     - /bin/sh
     - -c
     - touch /tmp/healthy; sleep 30; rm -rf /tmp/healthy; sleep 600
+# Scaling is off by design. State lives in BoltDB at /data/status.db on a
+# ReadWriteOnce PVC, and bolt takes an exclusive flock — a second replica fails
+# to open the database and the pod crashes on boot. That database holds the
+# check history, incidents, VAPID keys and every push subscription.
+# To run more than one replica you would need to move that state out first.
 autoscaling:
-  MaxReplicas: 5
-  MinReplicas: 2
+  MaxReplicas: 1
+  MinReplicas: 1
   TargetCPUUtilizationPercentage: 70
   TargetMemoryUtilizationPercentage: 70
   annotations: {}
@@ -111,7 +150,7 @@ autoscaling:
     TargetCPUUtilizationPercentage: 70
     TargetMemoryUtilizationPercentage: 70
     enabled: false
-  enabled: true
+  enabled: false
   extraMetrics: []
   labels: {}
 command:
@@ -299,8 +338,10 @@ networkPolicy:
   policyTypes: []
 pauseForSecondsBeforeSwitchActive: 30
 podAnnotations: {}
+# minAvailable on a single-replica Deployment would block every node drain.
+# maxUnavailable 1 lets the node cordon proceed; the pod reschedules with its PVC.
 podDisruptionBudget:
-  minAvailable: 1
+  maxUnavailable: 1
 podLabels: {}
 podSecurityContext:
   runAsNonRoot: true
@@ -311,7 +352,8 @@ podSecurityContext:
 prometheus:
   release: monitoring
 rawYaml: []
-replicaCount: 2
+# Exactly one: see the autoscaling note above.
+replicaCount: 1
 resources:
   limits:
     cpu: "0.5"
