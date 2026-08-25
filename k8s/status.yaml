@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: status
-          image: harbor.invinsense.dev/infra/status:3740dfc-prom
+          image: harbor.invinsense.dev/infra/status:9e4c406-cluster
           imagePullPolicy: IfNotPresent
           args: ["-config", "/config.yaml"]
           env:

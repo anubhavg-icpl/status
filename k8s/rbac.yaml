@@ -1,6 +1,11 @@
-# Minimal ClusterRole for status-page k8s_* probes.
-# Cluster-scope read on: nodes, pods, deployments, statefulsets, daemonsets,
-# events, PVCs, HPAs, CronJobs, plus non-resource URLs (/livez, /readyz).
+# Minimal ClusterRole for the status page.
+#
+# Every rule below backs a call the binary actually makes: the informer factory
+# in k8sclient/client.go (nodes, pods, services, namespaces, events, PVCs,
+# deployments, statefulsets, daemonsets, HPAs, cronjobs), the metrics-server
+# read in cluster.go, the on-demand secret read for annotation-based probe auth
+# in discovery.go, and the apiserver health/version endpoints in monitor/k8s.go.
+# Read-only throughout — nothing here can mutate cluster state.
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -15,22 +20,21 @@ rules:
       - namespaces
       - events
       - persistentvolumeclaims
-      - persistentvolumes
     verbs: [get, list, watch]
   - apiGroups: [""]
     resources: [secrets]
     verbs: [get] # narrow: read referenced auth secrets only on demand
   - apiGroups: ["apps"]
-    resources: [deployments, statefulsets, daemonsets, replicasets]
+    resources: [deployments, statefulsets, daemonsets]
     verbs: [get, list, watch]
   - apiGroups: ["batch"]
-    resources: [cronjobs, jobs]
+    resources: [cronjobs]
     verbs: [get, list, watch]
   - apiGroups: ["autoscaling"]
     resources: [horizontalpodautoscalers]
     verbs: [get, list, watch]
   - apiGroups: ["metrics.k8s.io"]
-    resources: [nodes, pods]
+    resources: [nodes]
     verbs: [get, list]
   - nonResourceURLs:
       - /livez
