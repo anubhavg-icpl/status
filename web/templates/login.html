@@ -27,7 +27,7 @@
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg-primary);
+            background: #4a4d44;
             color: var(--text-primary);
             min-height: 100vh;
             display: flex;
@@ -37,27 +37,95 @@
             -webkit-font-smoothing: antialiased;
         }
 
+        /* The scene's own ground. Near-flat, with the light pool the root
+           stands in — the page background climbs toward the bottom edge. */
+        .hero {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            z-index: 0;
+            background:
+                radial-gradient(64% 52% at 27% 84%, rgba(232, 238, 222, 0.085) 0%, rgba(232, 238, 222, 0) 72%),
+                radial-gradient(70% 60% at 92% 8%, rgba(24, 28, 20, 0.10) 0%, rgba(24, 28, 20, 0) 68%),
+                #4a4d44;
+        }
+
+        .hero::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            background:
+                radial-gradient(72% 44% at 50% 117%, rgba(238, 243, 231, 0.50) 0%, rgba(238, 243, 231, 0.21) 42%, rgba(238, 243, 231, 0.04) 72%, rgba(238, 243, 231, 0) 88%),
+                linear-gradient(180deg, rgba(238, 243, 231, 0) 54%, rgba(238, 243, 231, 0.03) 78%, rgba(238, 243, 231, 0.085) 100%);
+        }
+
+        #scene {
+            position: absolute;
+            inset: 0;
+            z-index: 3;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.7s cubic-bezier(.22, .61, .36, 1);
+        }
+
+        .is-ready #scene { opacity: 1; }
+
+        /* Centred with margins rather than a transform: a transform here would
+           open a stacking context and trap the canvas underneath it. */
+        .stage {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            margin-left: calc(-800 * (100vw / 1600));
+            margin-top: calc(-440 * (100vw / 1600));
+            width: calc(1600 * (100vw / 1600));
+            height: calc(880 * (100vw / 1600));
+            pointer-events: none;
+        }
+
         .bg-gradient {
             position: fixed;
             inset: 0;
             background:
-                radial-gradient(ellipse at 20% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 80%, rgba(16, 185, 129, 0.1) 0%, transparent 50%);
+                radial-gradient(ellipse at 20% 20%, rgba(59, 130, 246, 0.10) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(16, 185, 129, 0.08) 0%, transparent 50%);
             pointer-events: none;
-            z-index: 0;
+            z-index: 1;
+        }
+
+        /* The form has to stay readable over a scene whose brightness the
+           reader does not control — moss and pollen both run pale. */
+        .vignette {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 2;
+            background:
+                radial-gradient(58% 46% at 50% 50%, rgba(8, 10, 7, 0.62) 0%, rgba(8, 10, 7, 0.30) 46%, rgba(8, 10, 7, 0) 78%),
+                linear-gradient(180deg, rgba(8, 10, 7, 0.34) 0%, rgba(8, 10, 7, 0) 30%);
         }
 
         .card {
             position: relative;
-            z-index: 1;
+            z-index: 3;
             width: 100%;
             max-width: 400px;
             background: var(--bg-glass);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            border: 1px solid var(--border-color);
+            border: 1px solid rgba(255, 255, 255, 0.14);
             border-radius: 20px;
             padding: 40px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 46%),
+                rgba(18, 22, 16, 0.72);
+            box-shadow:
+                0 32px 70px rgba(6, 9, 5, 0.55),
+                inset 0 1px rgba(255, 255, 255, 0.08);
         }
 
         .brand {
@@ -98,7 +166,7 @@
             margin-bottom: 20px;
             border-radius: 10px;
             border: 1px solid var(--border-color);
-            background: rgba(255, 255, 255, 0.04);
+            background: rgba(255, 255, 255, 0.05);
             color: var(--text-primary);
             transition: border-color 0.2s ease;
         }
@@ -147,10 +215,21 @@
             color: var(--text-muted);
             font-family: 'JetBrains Mono', monospace;
         }
+
+        @media (prefers-reduced-motion: reduce) {
+            #scene { transition: none; opacity: 1; }
+        }
     </style>
 </head>
 <body>
+    <!-- Sylva living-world scene. #stage is the 1600x880 reference frame the
+         scene's unit maths is written against; it paints nothing itself. -->
+    <div class="hero" id="hero" aria-hidden="true">
+        <canvas id="scene"></canvas>
+        <div class="stage" id="stage"></div>
+    </div>
     <div class="bg-gradient"></div>
+    <div class="vignette" aria-hidden="true"></div>
 
     <main class="card">
         <div class="brand">
@@ -187,5 +266,8 @@
 
         <p class="foot">Made with &#10084; by Anubhav Gain</p>
     </main>
+
+    <script src="/static/three.min.js"></script>
+    <script src="/static/sylva-scene.js"></script>
 </body>
 </html>
