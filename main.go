@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"flag"
+	"fmt"
 	"log"
+	"math/big"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/status/config"
 	"github.com/status/k8sclient"
@@ -34,7 +39,32 @@ func needsK8s(svcs []config.Service) bool {
 func main() {
 	// Parse command line flags
 	configPath := flag.String("config", "config.yaml", "Path to configuration file")
+	hashPW := flag.String("hash-password", "", "Print a bcrypt hash for the given password and exit (for auth.users[].password_hash)")
+	genPW := flag.Bool("gen-password", false, "Generate a random password, print it with its bcrypt hash, and exit")
 	flag.Parse()
+
+	// Credential helpers: let an operator mint a hash without installing
+	// htpasswd or writing a throwaway Go program.
+	if *genPW {
+		pw, err := randomPassword(24)
+		if err != nil {
+			log.Fatalf("generate password: %v", err)
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+		if err != nil {
+			log.Fatalf("hash password: %v", err)
+		}
+		fmt.Printf("password: %s\nhash:     %s\n", pw, hash)
+		return
+	}
+	if *hashPW != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(*hashPW), bcrypt.DefaultCost)
+		if err != nil {
+			log.Fatalf("hash password: %v", err)
+		}
+		fmt.Printf("%s\n", hash)
+		return
+	}
 
 	// Load configuration
 	cfg, err := config.Load(*configPath)
@@ -215,6 +245,36 @@ func main() {
 		}
 	}
 
+	// Per-application probes: one for every Deployment / StatefulSet /
+	// DaemonSet in scope. Generated from the cluster rather than listed by
+	// hand, because a hand-written list of 48 workloads is wrong the next day.
+	var workloadOpts k8sclient.WorkloadDiscoveryOptions
+	if kc != nil && cfg.Cluster.AutoWorkloads.Enabled {
+		aw := cfg.Cluster.AutoWorkloads
+		workloadOpts = k8sclient.WorkloadDiscoveryOptions{
+			Namespaces:        aw.Namespaces,
+			ExcludeNamespaces: aw.ExcludeNamespaces,
+			Kinds:             aw.Kinds,
+			Interval:          aw.Interval,
+			GroupPrefix:       aw.GroupPrefix,
+			MaxProbes:         aw.MaxProbes,
+		}
+		workloads, err := kc.DiscoverWorkloads(workloadOpts)
+		if err != nil {
+			log.Printf("workload discovery failed: %v", err)
+		} else {
+			added := 0
+			for _, w := range workloads {
+				if reserved[w.Name] {
+					continue
+				}
+				cfg.Services = append(cfg.Services, w)
+				added++
+			}
+			log.Printf("workload discovery: %d application probes generated", added)
+		}
+	}
+
 	// Create monitor with storage for persistence
 	mon := monitor.NewMonitor(cfg.Services, store)
 	if kc != nil {
@@ -231,6 +291,16 @@ func main() {
 			log.Printf("autodisc watcher failed to install: %v", err)
 		} else {
 			log.Println("autodisc watcher installed — annotations take effect at runtime")
+		}
+	}
+
+	// Keep application probes in step: a new Deployment becomes a probe within
+	// seconds, and a deleted one stops being reported as down forever.
+	if kc != nil && cfg.Cluster.AutoWorkloads.Enabled {
+		if err := kc.WatchWorkloads(context.Background(), mon, reserved, workloadOpts); err != nil {
+			log.Printf("workload watcher failed to install: %v", err)
+		} else {
+			log.Println("workload watcher installed — new applications appear automatically")
 		}
 	}
 
@@ -316,4 +386,22 @@ func printBanner() {
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 `
 	log.Println(banner)
+}
+
+// randomPassword returns a URL-safe password drawn from crypto/rand.
+// The alphabet omits characters that are easy to confuse when read aloud or
+// copied by hand (0/O, 1/l/I) — a credential that gets mistyped gets weakened
+// by whoever "simplifies" it.
+func randomPassword(n int) (string, error) {
+	const alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789-_"
+	out := make([]byte, n)
+	max := big.NewInt(int64(len(alphabet)))
+	for i := range out {
+		idx, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
+		}
+		out[i] = alphabet[idx.Int64()]
+	}
+	return string(out), nil
 }

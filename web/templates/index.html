@@ -536,6 +536,25 @@
             text-decoration: underline;
         }
 
+        .heart {
+            color: var(--error);
+            font-style: normal;
+        }
+
+        .session-line {
+            margin-top: 10px;
+            font-size: 0.8125rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .session-line[hidden] { display: none; }
+
+        .session-line strong {
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
         /* Connection status */
         .connection-status {
             position: fixed;
@@ -967,7 +986,12 @@
         </main>
 
         <footer>
-            <p>Powered by <a href="https://github.com/status" target="_blank">Status Monitor</a></p>
+            <p>Made with <span class="heart" aria-label="love">&#10084;</span> by
+               <a href="https://github.com/anubhavg-icpl" target="_blank" rel="noopener">Anubhav Gain</a></p>
+            <p class="session-line" id="session-line" hidden>
+                Signed in as <strong id="session-user"></strong> &middot;
+                <a href="/logout">Sign out</a>
+            </p>
         </footer>
     </div>
 
@@ -991,6 +1015,7 @@
             loadCluster();
             setInterval(loadCluster, 20000);
             initPush();
+            loadSession();
         });
 
         // Fetch initial data
@@ -1735,6 +1760,20 @@
             const m = Math.floor(seconds / 60);
             if (m > 0) return `${m}m`;
             return `${seconds}s`;
+        }
+
+        // Reveal the sign-out control only when a login is actually in use.
+        async function loadSession() {
+            try {
+                const res = await fetch('/api/auth');
+                const body = await res.json();
+                if (!body.success || !body.data || !body.data.enabled) return;
+                if (!body.data.authenticated) return;
+                document.getElementById('session-user').textContent = body.data.username || '';
+                document.getElementById('session-line').hidden = false;
+            } catch (e) {
+                // Auth status is cosmetic; never let it break the page.
+            }
         }
 
         /* ===================================================================

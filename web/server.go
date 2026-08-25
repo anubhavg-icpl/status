@@ -101,6 +101,8 @@ type Server struct {
 	cluster      clusterCache
 	alerts       *alertTracker
 	clusterWatch *clusterWatcher
+	auth         *authenticator
+	loginTmpl    *template.Template
 }
 
 // NewServer creates a new web server instance
@@ -127,6 +129,7 @@ func NewServer(cfg *config.Config, mon *monitor.Monitor, store *storage.Storage,
 	}
 	s.alerts = newAlertTracker(cfg, notif)
 	s.clusterWatch = newClusterWatcher(cfg, notif)
+	s.auth = newAuthenticator(cfg.Auth)
 	if cfg.Redis.Enabled {
 		rdb := redis.NewClient(&redis.Options{
 			Addr:     cfg.Redis.Addr,
@@ -157,6 +160,12 @@ func (s *Server) Start() error {
 	}
 	s.apiDocsTmpl = apiDocsTmpl
 
+	loginTmpl, err := template.New("login.html").Funcs(funcs).ParseFS(templateFiles, "templates/login.html")
+	if err != nil {
+		return fmt.Errorf("failed to parse login template: %w", err)
+	}
+	s.loginTmpl = loginTmpl
+
 	mux := http.NewServeMux()
 
 	// Serve static files
@@ -170,30 +179,52 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/favicon.ico", s.handleFavicon)
 	mux.HandleFunc("/favicon.svg", s.handleFavicon)
 
-	// === Public API Routes (rate limited) ===
-	mux.HandleFunc("/api/status", s.withRateLimit(s.handleAPIStatus))
-	mux.HandleFunc("/api/status/", s.withRateLimit(s.handleAPIServiceStatus))
-	mux.HandleFunc("/api/summary", s.withRateLimit(s.handleAPISummary))
-	mux.HandleFunc("/api/components", s.withRateLimit(s.handleAPIComponents))
+	// === Login ===
+	// /login and /logout must stay reachable without a session, or there is no
+	// way in. They are rate limited like any other public endpoint.
+	mux.HandleFunc("/login", s.withRateLimit(s.handleLogin))
+	mux.HandleFunc("/logout", s.handleLogout)
+	mux.HandleFunc("/api/auth", s.withRateLimit(s.handleAuthStatus))
+
+	// === Status API ===
+	// gate() applies the login requirement unless auth.public_status keeps the
+	// service list and incidents readable to anonymous visitors. The Kubernetes
+	// cluster view is never covered by public_status — it carries internal
+	// topology and is gated separately below.
+	gate := func(h http.HandlerFunc) http.HandlerFunc {
+		if s.config.Auth.PublicStatus {
+			return s.withRateLimit(h)
+		}
+		return s.withRateLimit(s.requireSession(h))
+	}
+
+	mux.HandleFunc("/api/status", gate(s.handleAPIStatus))
+	mux.HandleFunc("/api/status/", gate(s.handleAPIServiceStatus))
+	mux.HandleFunc("/api/summary", gate(s.handleAPISummary))
+	mux.HandleFunc("/api/components", gate(s.handleAPIComponents))
 
 	// History API
-	mux.HandleFunc("/api/history", s.withRateLimit(s.handleAPIHistory))
-	mux.HandleFunc("/api/history/", s.withRateLimit(s.handleAPIServiceHistory))
-	mux.HandleFunc("/api/uptime", s.withRateLimit(s.handleAPIUptime))
+	mux.HandleFunc("/api/history", gate(s.handleAPIHistory))
+	mux.HandleFunc("/api/history/", gate(s.handleAPIServiceHistory))
+	mux.HandleFunc("/api/uptime", gate(s.handleAPIUptime))
 
 	// Incidents API (public read, authenticated write)
-	mux.HandleFunc("/api/incidents", s.withRateLimit(s.handleAPIIncidents))
-	mux.HandleFunc("/api/incidents/", s.withRateLimit(s.handleAPIIncident))
+	mux.HandleFunc("/api/incidents", gate(s.handleAPIIncidents))
+	mux.HandleFunc("/api/incidents/", gate(s.handleAPIIncident))
 
 	// Maintenance API
-	mux.HandleFunc("/api/maintenance", s.withRateLimit(s.handleAPIMaintenance))
-	mux.HandleFunc("/api/maintenance/", s.withRateLimit(s.handleAPIMaintenanceItem))
+	mux.HandleFunc("/api/maintenance", gate(s.handleAPIMaintenance))
+	mux.HandleFunc("/api/maintenance/", gate(s.handleAPIMaintenanceItem))
 
 	// Metrics API
-	mux.HandleFunc("/api/metrics", s.withRateLimit(s.handleAPIMetrics))
+	mux.HandleFunc("/api/metrics", gate(s.handleAPIMetrics))
 
 	// Kubernetes cluster snapshot (auth-gated unless cluster.public is set)
-	mux.HandleFunc("/api/cluster", s.withRateLimit(s.maybeAuth(!s.config.Cluster.Public, s.handleAPICluster)))
+	// Cluster snapshot: internal topology. When auth is on it always needs a
+	// session — cluster.public only relaxes the API-key requirement, it never
+	// exposes node names and images to anonymous visitors.
+	mux.HandleFunc("/api/cluster", s.withRateLimit(
+		s.requireSession(s.maybeAuth(!s.config.Cluster.Public, s.handleAPICluster))))
 
 	// Notification channels: Web Push registration + delivery self-test
 	mux.HandleFunc("/api/push/key", s.withRateLimit(s.handlePushKey))
@@ -215,18 +246,19 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/", s.handleAPIDocs)
 
 	// === Feed Routes ===
-	mux.HandleFunc("/feed/rss", s.handleRSSFeed)
-	mux.HandleFunc("/feed/atom", s.handleAtomFeed)
-	mux.HandleFunc("/feed/json", s.handleJSONFeed)
-	mux.HandleFunc("/feed", s.handleRSSFeed) // Default to RSS
+	mux.HandleFunc("/feed/rss", gate(s.handleRSSFeed))
+	mux.HandleFunc("/feed/atom", gate(s.handleAtomFeed))
+	mux.HandleFunc("/feed/json", gate(s.handleJSONFeed))
+	mux.HandleFunc("/feed", gate(s.handleRSSFeed)) // Default to RSS
 
-	// WebSocket endpoint
-	mux.HandleFunc("/ws", s.handleWebSocket)
+	// WebSocket endpoint — streams the same data as /api/status, so it gets the
+	// same gate. Without this the login could be bypassed by opening the socket.
+	mux.HandleFunc("/ws", gate(s.handleWebSocket))
 
 	// Main pages
-	mux.HandleFunc("/", s.handleIndex)
-	mux.HandleFunc("/history", s.handleHistoryPage)
-	mux.HandleFunc("/incidents/", s.handleIncidentPage)
+	mux.HandleFunc("/", gate(s.handleIndex))
+	mux.HandleFunc("/history", gate(s.handleHistoryPage))
+	mux.HandleFunc("/incidents/", gate(s.handleIncidentPage))
 
 	// Health check endpoints (no rate limiting)
 	mux.HandleFunc("/healthz", s.handleHealthz)
@@ -248,6 +280,11 @@ func (s *Server) Start() error {
 
 	// Start daily history recorder
 	go s.recordDailyHistory(s.ctx)
+
+	// Sweep expired sessions; an abandoned browser never calls logout.
+	if s.auth.Enabled() {
+		go s.purgeSessions(s.ctx.Done())
+	}
 
 	// Watch the cluster for application-level failures across every namespace.
 	// Runs regardless of page views: an outage at 3am has no audience.

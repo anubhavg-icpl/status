@@ -21,6 +21,7 @@ var (
 	bucketCheckHistory = []byte("check_history")
 	bucketPushSubs     = []byte("push_subscriptions")
 	bucketSettings     = []byte("settings")
+	bucketSessions     = []byte("sessions")
 )
 
 // Storage handles persistent data storage using BoltDB
@@ -114,7 +115,7 @@ func NewStorage(dataDir string) (*Storage, error) {
 	err = db.Update(func(tx *bolt.Tx) error {
 		buckets := [][]byte{
 			bucketIncidents, bucketMaintenance, bucketHistory,
-			bucketCheckHistory, bucketPushSubs, bucketSettings,
+			bucketCheckHistory, bucketPushSubs, bucketSettings, bucketSessions,
 		}
 		for _, bucket := range buckets {
 			if _, err := tx.CreateBucketIfNotExists(bucket); err != nil {

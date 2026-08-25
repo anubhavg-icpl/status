@@ -66,6 +66,29 @@ type ClusterConfig struct {
 	Public bool `yaml:"public" json:"public"`
 	// CacheTTL is how long a snapshot is reused between requests.
 	CacheTTL time.Duration `yaml:"cache_ttl" json:"cache_ttl"`
+	// AutoWorkloads turns every Deployment, StatefulSet and DaemonSet in the
+	// cluster into its own probe, so the page shows per-application status
+	// without a config entry per workload.
+	AutoWorkloads AutoWorkloadsConfig `yaml:"auto_workloads" json:"auto_workloads"`
+}
+
+// AutoWorkloadsConfig controls per-application probe generation.
+type AutoWorkloadsConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Namespaces to cover. Empty = every namespace except those excluded.
+	Namespaces []string `yaml:"namespaces" json:"namespaces"`
+	// ExcludeNamespaces drops noise. Defaults to the Kubernetes system
+	// namespaces, which are the cluster's own plumbing rather than your apps.
+	ExcludeNamespaces []string `yaml:"exclude_namespaces" json:"exclude_namespaces"`
+	// Kinds: deployment, statefulset, daemonset. Empty = all three.
+	Kinds []string `yaml:"kinds" json:"kinds"`
+	// Interval between checks for each generated probe.
+	Interval time.Duration `yaml:"interval" json:"interval"`
+	// GroupPrefix is prepended to the namespace to form the display group.
+	GroupPrefix string `yaml:"group_prefix" json:"group_prefix"`
+	// MaxProbes caps generation. Exceeding it logs a warning rather than
+	// silently monitoring only part of the cluster.
+	MaxProbes int `yaml:"max_probes" json:"max_probes"`
 }
 
 // defaultAlerts returns the alerting defaults applied before YAML is merged.
@@ -99,6 +122,14 @@ func defaultCluster() ClusterConfig {
 		Enabled:  true,
 		Public:   false,
 		CacheTTL: 10 * time.Second,
+		AutoWorkloads: AutoWorkloadsConfig{
+			Enabled:  false,
+			Interval: 60 * time.Second,
+			ExcludeNamespaces: []string{
+				"kube-system", "kube-public", "kube-node-lease",
+			},
+			MaxProbes: 400,
+		},
 	}
 }
 
@@ -131,6 +162,16 @@ func (c *Config) applyAlertDefaults() {
 	}
 	if c.Cluster.CacheTTL == 0 {
 		c.Cluster.CacheTTL = defaultCluster().CacheTTL
+	}
+	dc := defaultCluster()
+	if c.Cluster.AutoWorkloads.Interval <= 0 {
+		c.Cluster.AutoWorkloads.Interval = dc.AutoWorkloads.Interval
+	}
+	if c.Cluster.AutoWorkloads.MaxProbes <= 0 {
+		c.Cluster.AutoWorkloads.MaxProbes = dc.AutoWorkloads.MaxProbes
+	}
+	if c.Cluster.AutoWorkloads.ExcludeNamespaces == nil {
+		c.Cluster.AutoWorkloads.ExcludeNamespaces = dc.AutoWorkloads.ExcludeNamespaces
 	}
 	if c.Alerts.Cluster.Interval <= 0 {
 		c.Alerts.Cluster.Interval = d.Cluster.Interval
@@ -185,6 +226,7 @@ func (c *Config) applyEnvOverrides() {
 	setBool(&c.Alerts.Cluster.Enabled, "STATUS_CLUSTER_ALERTS_ENABLED")
 	setStr(&c.Alerts.Cluster.MinSeverity, "STATUS_CLUSTER_MIN_SEVERITY")
 
+	setBool(&c.Cluster.AutoWorkloads.Enabled, "STATUS_AUTO_WORKLOADS")
 	setBool(&c.Cluster.Enabled, "STATUS_CLUSTER_ENABLED")
 	setBool(&c.Cluster.Public, "STATUS_CLUSTER_PUBLIC")
 

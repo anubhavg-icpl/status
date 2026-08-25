@@ -24,6 +24,7 @@ type Config struct {
 	Redis       RedisConfig     `yaml:"redis"`
 	Alerts      AlertsConfig    `yaml:"alerts"`
 	Cluster     ClusterConfig   `yaml:"cluster"`
+	Auth        AuthConfig      `yaml:"auth"`
 }
 
 // StorageConfig holds storage settings
@@ -228,6 +229,7 @@ func defaultConfig() *Config {
 		Webhooks: []WebhookConfig{},
 		Alerts:   defaultAlerts(),
 		Cluster:  defaultCluster(),
+		Auth:     defaultAuth(),
 	}
 }
 
@@ -271,7 +273,9 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg.applyAlertDefaults()
+	cfg.applyAuthDefaults()
 	cfg.applyEnvOverrides()
+	cfg.applyAuthEnv()
 
 	return cfg, nil
 }
